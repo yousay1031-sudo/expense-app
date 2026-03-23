@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>経費AI — 自動経費管理システム</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F7F6F2;
+  --surface:#FFFFFF;
+  --surface2:#F2F1ED;
+  --border:rgba(0,0,0,0.08);
+  --border2:rgba(0,0,0,0.15);
+  --text:#1A1A18;
+  --text2:#6B6B67;
+  --text3:#9B9B97;
+  --blue:#185FA5;--blue-l:#E6F1FB;--blue-d:#0C447C;
+  --green:#0F6E56;--green-l:#E1F5EE;
+  --amber:#BA7517;--amber-l:#FAEEDA;
+  --red:#A32D2D;--red-l:#FCEBEB;
+  --purple:#534AB7;--purple-l:#EEEDFE;
+  --sidebar:220px;
+  --header:56px;
+  --r:10px;--r-lg:14px;
+}
+body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;min-height:100vh}
+
+/* ===== LAYOUT ===== */
+.app{display:flex;flex-direction:column;min-height:100vh}
+.header{height:var(--header);background:var(--surface);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:12px;position:sticky;top:0;z-index:100;flex-shrink:0}
+.logo{font-size:15px;font-weight:700;letter-spacing:-0.5px}
+.logo span{color:var(--blue)}
+.header-spacer{flex:1}
+.ai-badge{background:var(--green-l);color:var(--green);font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;display:flex;align-items:center;gap:5px}
+.ai-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.header-month{font-size:12px;color:var(--text2)}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--blue-l);color:var(--blue);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer}
+
+.body{display:flex;flex:1}
+.sidebar{width:var(--sidebar);background:var(--surface);border-right:0.5px solid var(--border);padding:12px 0;display:flex;flex-direction:column;gap:1px;flex-shrink:0;overflow-y:auto}
+.nav-group{padding:8px 16px 3px;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.8px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 16px;cursor:pointer;font-size:13px;color:var(--text2);border:none;background:none;width:100%;text-align:left;transition:background .1s;position:relative}
+.nav-item:hover{background:var(--surface2)}
+.nav-item.active{background:var(--blue-l);color:var(--blue);font-weight:500}
+.nav-item svg{width:15px;height:15px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.5}
+.nav-badge{margin-left:auto;background:var(--red-l);color:var(--red);font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px}
+.nav-badge.warn{background:var(--amber-l);color:var(--amber)}
+
+.main{flex:1;overflow-y:auto;padding:24px}
+.page{display:none}
+.page.active{display:block}
+
+/* ===== SETUP BANNER ===== */
+.setup-banner{background:var(--amber-l);border:0.5px solid rgba(186,117,23,.25);border-radius:var(--r);padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--amber)}
+.setup-banner.ok{background:var(--green-l);border-color:rgba(15,110,86,.2);color:var(--green)}
+.setup-banner.hidden{display:none}
+
+/* ===== SETTINGS ===== */
+.settings-section{margin-bottom:28px}
+.settings-title{font-size:13px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:0.5px solid var(--border)}
+.settings-row{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.settings-label{font-size:11px;font-weight:500;color:var(--text2)}
+.settings-input{border:0.5px solid var(--border2);border-radius:8px;padding:9px 12px;font-size:13px;background:var(--surface);color:var(--text);width:100%;font-family:'Noto Sans JP',sans-serif}
+.settings-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px rgba(24,95,165,.1)}
+.settings-input.mono{font-family:monospace;font-size:12px}
+.settings-hint{font-size:11px;color:var(--text3);margin-top:2px}
+.btn-test{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:500;background:var(--surface2);border:0.5px solid var(--border2);cursor:pointer;color:var(--text);transition:background .1s}
+.btn-test:hover{background:var(--border)}
+.conn-result{font-size:12px;padding:8px 12px;border-radius:8px;margin-top:8px}
+.conn-result.ok{background:var(--green-l);color:var(--green)}
+.conn-result.err{background:var(--red-l);color:var(--red)}
+
+/* ===== STAT GRID ===== */
+.stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--surface2);border-radius:var(--r);padding:14px 16px}
+.stat-label{font-size:11px;color:var(--text2);margin-bottom:5px}
+.stat-value{font-size:22px;font-weight:700}
+.stat-delta{font-size:11px;color:var(--text3);margin-top:2px}
+.stat-value.blue{color:var(--blue)}
+.stat-value.green{color:var(--green)}
+.stat-value.amber{color:var(--amber)}
+.stat-value.purple{color:var(--purple)}
+
+/* ===== CARDS ===== */
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:16px 18px;margin-bottom:16px}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.card-title{font-size:13px;font-weight:700}
+.card-action{font-size:12px;color:var(--blue);cursor:pointer;font-weight:400}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+
+/* ===== PAGE HEADER ===== */
+.page-title{font-size:18px;font-weight:700;margin-bottom:3px}
+.page-sub{font-size:12px;color:var(--text2);margin-bottom:20px}
+
+/* ===== PENDING LIST ===== */
+.pending-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border)}
+.pending-item:last-child{border-bottom:none}
+.pi-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px}
+.pi-info{flex:1;min-width:0}
+.pi-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pi-meta{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pi-amount{font-size:14px;font-weight:700;text-align:right}
+.status-pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;display:inline-flex;white-space:nowrap}
+.sp-pending{background:var(--amber-l);color:var(--amber)}
+.sp-approved{background:var(--green-l);color:var(--green)}
+.sp-check{background:var(--red-l);color:var(--red)}
+
+/* ===== DEPT TAGS ===== */
+.dept-tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;display:inline-flex;white-space:nowrap}
+.dt-wash{background:var(--blue-l);color:var(--blue-d)}
+.dt-car{background:var(--green-l);color:var(--green)}
+.dt-food{background:var(--amber-l);color:var(--amber)}
+.dt-admin{background:var(--purple-l);color:var(--purple)}
+.dt-other{background:var(--surface2);color:var(--text2)}
+
+/* ===== MINI CHART ===== */
+.mini-chart{display:flex;align-items:flex-end;gap:5px;height:80px}
+.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%;justify-content:flex-end}
+.bar{width:100%;border-radius:3px 3px 0 0;background:var(--blue-l);transition:background .15s;cursor:pointer;min-height:4px}
+.bar.active{background:var(--blue)}
+.bar-lbl{font-size:9px;color:var(--text3)}
+
+/* ===== DONUT ===== */
+.donut-wrap{display:flex;align-items:center;gap:16px}
+.donut-legend{flex:1;display:flex;flex-direction:column;gap:8px}
+.legend-row{display:flex;align-items:center;gap:8px;font-size:12px}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.legend-name{flex:1;color:var(--text2)}
+.legend-pct{font-weight:700}
+
+/* ===== SCAN PAGE ===== */
+.doc-type-bar{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.doc-btn{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:500;border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;color:var(--text2);transition:all .12s}
+.doc-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.drop-zone{border:2px dashed var(--border2);border-radius:var(--r-lg);padding:40px 24px;text-align:center;cursor:pointer;transition:all .15s;background:var(--surface);margin-bottom:14px}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--blue);background:var(--blue-l)}
+.drop-zone.has-file{border-color:var(--green);border-style:solid;background:var(--green-l)}
+.drop-icon{width:44px;height:44px;margin:0 auto 10px;border-radius:12px;background:var(--surface2);display:flex;align-items:center;justify-content:center}
+.drop-icon svg{width:22px;height:22px;stroke:var(--text2);fill:none;stroke-width:1.5}
+.drop-title{font-size:14px;font-weight:700;margin-bottom:4px}
+.drop-sub{font-size:12px;color:var(--text2)}
+.drop-sub em{color:var(--blue);font-style:normal}
+.preview-wrap{position:relative;margin-bottom:14px}
+.preview-img{width:100%;max-height:280px;object-fit:contain;border-radius:var(--r);border:0.5px solid var(--border);background:var(--surface2)}
+.preview-clear{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.5);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.preview-clear svg{width:13px;height:13px;stroke:#fff;fill:none;stroke-width:2}
+
+.btn-main{width:100%;padding:12px;border-radius:var(--r);font-size:14px;font-weight:700;background:var(--blue);color:#fff;border:none;cursor:pointer;transition:opacity .15s;margin-bottom:18px;font-family:'Noto Sans JP',sans-serif}
+.btn-main:hover{opacity:.88}
+.btn-main:disabled{opacity:.35;cursor:not-allowed}
+
+/* ===== PROGRESS ===== */
+.prog-step{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)}
+.prog-step:last-child{border-bottom:none}
+.ps-icon{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700}
+.ps-wait{background:var(--surface2);color:var(--text3)}
+.ps-doing{background:var(--blue-l);color:var(--blue)}
+.ps-done{background:var(--green-l);color:var(--green)}
+.ps-fail{background:var(--red-l);color:var(--red)}
+.ps-label{font-size:13px;font-weight:500;flex:1}
+.ps-sub{font-size:11px;color:var(--text2)}
+.ps-time{font-size:11px;color:var(--text3);margin-left:auto;white-space:nowrap}
+
+/* ===== RESULT ===== */
+.result-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:16px 18px;margin-bottom:12px}
+.result-card.accent{border-color:var(--blue)}
+.conf-pill{font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px}
+.cp-high{background:var(--green-l);color:var(--green)}
+.cp-mid{background:var(--amber-l);color:var(--amber)}
+.cp-low{background:var(--red-l);color:var(--red)}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fi{display:flex;flex-direction:column;gap:3px}
+.fi.full{grid-column:1/-1}
+.fl{font-size:11px;font-weight:500;color:var(--text2)}
+.fl .fc{font-size:10px;margin-left:4px;font-weight:400}
+.fi-in{border:0.5px solid var(--border2);border-radius:7px;padding:7px 10px;font-size:13px;background:var(--surface);color:var(--text);width:100%;font-family:'Noto Sans JP',sans-serif}
+.fi-in:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px rgba(24,95,165,.1)}
+.fi-in.ai{background:var(--blue-l);border-color:rgba(24,95,165,.2)}
+.fi-sel{border:0.5px solid var(--border2);border-radius:7px;padding:7px 10px;font-size:13px;background:var(--surface);color:var(--text);width:100%;font-family:'Noto Sans JP',sans-serif}
+.items-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+.items-tbl th{text-align:left;padding:6px 8px;background:var(--surface2);font-size:11px;font-weight:700;color:var(--text2);border-bottom:0.5px solid var(--border)}
+.items-tbl td{padding:7px 8px;border-bottom:0.5px solid var(--border)}
+.items-tbl tr:last-child td{border-bottom:none}
+.num{text-align:right;font-weight:500}
+.dept-opt{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r);border:0.5px solid var(--border);background:var(--surface);cursor:pointer;margin-bottom:6px;transition:all .12s}
+.dept-opt:hover{border-color:var(--border2)}
+.dept-opt.sel{border-color:var(--blue);background:var(--blue-l)}
+.saved-banner{background:var(--green-l);border:1px solid rgba(15,110,86,.2);border-radius:var(--r-lg);padding:18px;text-align:center;margin-bottom:14px}
+.saved-icon{width:42px;height:42px;border-radius:50%;background:var(--green);margin:0 auto 8px;display:flex;align-items:center;justify-content:center}
+.saved-icon svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2.5}
+.saved-title{font-size:14px;font-weight:700;color:var(--green);margin-bottom:3px}
+.saved-id{font-size:11px;font-family:monospace;background:rgba(15,110,86,.12);padding:3px 10px;border-radius:6px;display:inline-block;margin-top:6px;color:var(--green)}
+.storage-info{font-size:11px;color:var(--green);margin-top:6px;opacity:.8;word-break:break-all}
+
+/* ===== LIST PAGE ===== */
+.filter-bar{display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap}
+.filter-btn{padding:6px 12px;border-radius:20px;font-size:12px;font-weight:500;border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;color:var(--text2);transition:all .1s}
+.filter-btn:hover,.filter-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.filter-search{flex:1;min-width:150px;border:0.5px solid var(--border2);border-radius:20px;padding:6px 14px;font-size:12px;background:var(--surface);color:var(--text);font-family:'Noto Sans JP',sans-serif}
+.filter-search:focus{outline:none;border-color:var(--blue)}
+.table-wrap{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.table-header{display:grid;grid-template-columns:90px 1fr 100px 90px 90px 70px;gap:8px;padding:10px 16px;background:var(--surface2);font-size:11px;font-weight:700;color:var(--text2);border-bottom:0.5px solid var(--border)}
+.table-row{display:grid;grid-template-columns:90px 1fr 100px 90px 90px 70px;gap:8px;padding:11px 16px;border-bottom:0.5px solid var(--border);align-items:center;font-size:13px;transition:background .1s;cursor:pointer}
+.table-row:last-child{border-bottom:none}
+.table-row:hover{background:var(--surface2)}
+.table-empty{padding:32px;text-align:center;color:var(--text3);font-size:13px}
+
+/* ===== ANALYSIS ===== */
+.insight-card{background:var(--blue-l);border:0.5px solid rgba(24,95,165,.15);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:16px}
+.insight-title{font-size:12px;font-weight:700;color:var(--blue);margin-bottom:6px;display:flex;align-items:center;gap:5px}
+.insight-body{font-size:13px;color:var(--text);line-height:1.7}
+.vendor-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.vendor-rank{font-size:11px;font-weight:700;color:var(--text3);width:16px}
+.vendor-name{flex:1;font-size:13px}
+.vendor-bar-wrap{width:90px;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
+.vendor-bar{height:100%;border-radius:3px;background:var(--blue)}
+.vendor-amt{font-size:12px;font-weight:700;text-align:right;min-width:68px}
+.month-select{border:0.5px solid var(--border2);border-radius:8px;padding:7px 12px;font-size:13px;background:var(--surface);color:var(--text);font-family:'Noto Sans JP',sans-serif}
+
+/* ===== VERIFY PAGE ===== */
+.alert-box{border-radius:var(--r);padding:12px 14px;margin-bottom:10px;font-size:13px;display:flex;align-items:flex-start;gap:10px}
+.ab-danger{background:var(--red-l);border:0.5px solid rgba(163,45,45,.2);color:var(--red)}
+.ab-warn{background:var(--amber-l);border:0.5px solid rgba(186,117,23,.2);color:var(--amber)}
+.ab-ok{background:var(--green-l);border:0.5px solid rgba(15,110,86,.2);color:var(--green)}
+.verify-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--border);font-size:13px}
+.verify-item:last-child{border-bottom:none}
+.vm{color:var(--green);font-size:11px;font-weight:700}
+.vmiss{color:var(--red);font-size:11px;font-weight:700}
+.vwarn{color:var(--amber);font-size:11px;font-weight:700}
+
+/* ===== DEPT SETTINGS ===== */
+.dept-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.dept-color-bar{width:4px;height:36px;border-radius:2px;flex-shrink:0}
+.dept-info{flex:1}
+.dept-name{font-size:14px;font-weight:700}
+.dept-kw{font-size:11px;color:var(--text2);margin-top:2px}
+
+/* ===== BUTTONS ===== */
+.btn-primary{padding:9px 18px;border-radius:8px;font-size:13px;font-weight:700;background:var(--blue);color:#fff;border:none;cursor:pointer;transition:opacity .15s;font-family:'Noto Sans JP',sans-serif}
+.btn-primary:hover{opacity:.88}
+.btn-secondary{padding:9px 18px;border-radius:8px;font-size:13px;border:0.5px solid var(--border2);background:var(--surface);color:var(--text);cursor:pointer;transition:background .1s;font-family:'Noto Sans JP',sans-serif}
+.btn-secondary:hover{background:var(--surface2)}
+.btn-sm{padding:5px 10px;border-radius:6px;font-size:11px;font-weight:500;border:0.5px solid var(--border2);background:var(--surface2);cursor:pointer;color:var(--text);transition:background .1s;font-family:'Noto Sans JP',sans-serif}
+.btn-sm:hover{background:var(--border)}
+.btn-sm.approve{background:var(--green-l);color:var(--green);border-color:rgba(15,110,86,.2)}
+.btn-sm.approve:hover{background:var(--green);color:#fff}
+.actions-row{display:flex;gap:8px;margin-top:16px}
+.err-box{background:var(--red-l);border:0.5px solid rgba(163,45,45,.2);border-radius:var(--r);padding:12px 14px;font-size:13px;color:var(--red);margin-bottom:14px}
+
+/* ===== TOAST ===== */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A1A18;color:#fff;font-size:13px;padding:10px 20px;border-radius:20px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9999;white-space:nowrap;font-family:'Noto Sans JP',sans-serif}
+.toast.show{opacity:1}
+
+/* ===== MODAL ===== */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:var(--r-lg);padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto}
+.modal-title{font-size:15px;font-weight:700;margin-bottom:6px}
+.modal-sub{font-size:13px;color:var(--text2);margin-bottom:16px}
+.modal-actions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">経費<span>AI</span></div>
+  <div class="ai-badge"><div class="ai-dot"></div>AI学習中</div>
+  <div class="header-spacer"></div>
+  <div class="header-month" id="header-month"></div>
+  <div class="avatar" title="設定" onclick="showPage('settings-page')">田</div>
+</div>
+
+<div class="body">
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="nav-group">メイン</div>
+  <button class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
+    <svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+    ダッシュボード
+  </button>
+  <button class="nav-item" id="nav-scan" onclick="showPage('scan')">
+    <svg viewBox="0 0 16 16"><path d="M2 5V3a1 1 0 011-1h2M11 2h2a1 1 0 011 1v2M14 11v2a1 1 0 01-1 1h-2M5 14H3a1 1 0 01-1-1v-2"/><rect x="5" y="5" width="6" height="6" rx="1"/></svg>
+    領収書スキャン
+    <span class="nav-badge warn" id="scan-badge" style="display:none">0</span>
+  </button>
+  <button class="nav-item" id="nav-list" onclick="showPage('list')">
+    <svg viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h8"/></svg>
+    経費一覧・承認
+    <span class="nav-badge" id="list-badge" style="display:none">0</span>
+  </button>
+  <div class="nav-group">分析</div>
+  <button class="nav-item" id="nav-analysis" onclick="showPage('analysis')">
+    <svg viewBox="0 0 16 16"><path d="M2 12L5 8l3 2 3-4 3 1"/><path d="M2 14h12"/></svg>
+    月次分析
+  </button>
+  <button class="nav-item" id="nav-verify" onclick="showPage('verify')">
+    <svg viewBox="0 0 16 16"><path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6L9 2z"/><path d="M9 2v4h4M5 9h6M5 11h4"/></svg>
+    請求書照合
+  </button>
+  <div class="nav-group">設定</div>
+  <button class="nav-item" id="nav-depts" onclick="showPage('depts')">
+    <svg viewBox="0 0 16 16"><circle cx="8" cy="6" r="2.5"/><path d="M3 13c0-3 2-5 5-5s5 2 5 5"/></svg>
+    部門設定
+  </button>
+  <button class="nav-item" id="nav-settings-page" onclick="showPage('settings-page')">
+    <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 2v1M8 13v1M2 8h1M13 8h1M3.9 3.9l.7.7M11.4 11.4l.7.7M11.4 3.9l-.7.7M4.6 11.4l-.7.7"/></svg>
+    API設定
+  </button>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+<!-- ===== SETUP BANNER ===== -->
+<div class="setup-banner" id="setup-banner">
+  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 5v3M8 10.5v.5"/></svg>
+  <span>Supabase未接続です。<strong style="cursor:pointer;text-decoration:underline" onclick="showPage('settings-page')">API設定</strong>からURLとキーを入力してください。</span>
+</div>
+
+<!-- ===== DASHBOARD ===== -->
+<div class="page active" id="page-dashboard">
+  <div class="page-title">ダッシュボード</div>
+  <div class="page-sub" id="dashboard-date"></div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">今月の経費合計</div><div class="stat-value blue" id="stat-total">¥0</div><div class="stat-delta" id="stat-total-delta">データなし</div></div>
+    <div class="stat-card"><div class="stat-label">承認待ち</div><div class="stat-value amber" id="stat-pending">0件</div><div class="stat-delta">要対応</div></div>
+    <div class="stat-card"><div class="stat-label">今月の件数</div><div class="stat-value green" id="stat-count">0件</div><div class="stat-delta">登録済み</div></div>
+    <div class="stat-card"><div class="stat-label">AI振り分け精度</div><div class="stat-value purple" id="stat-accuracy">—</div><div class="stat-delta" id="stat-learned">学習データなし</div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title">月別経費推移</div><span class="card-action" onclick="showPage('analysis')">詳細 →</span></div>
+      <div class="mini-chart" id="mini-chart"></div>
+      <div id="mini-chart-labels" style="display:flex;gap:5px;margin-top:6px;justify-content:center"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">部門別内訳</div></div>
+      <div class="donut-wrap" id="donut-wrap">
+        <div style="font-size:12px;color:var(--text3)">データを読み込み中...</div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">承認待ち</div><span class="card-action" onclick="showPage('list')">すべて見る →</span></div>
+    <div id="pending-list"><div style="padding:16px;text-align:center;font-size:13px;color:var(--text3)">読み込み中...</div></div>
+  </div>
+</div>
+
+<!-- ===== SCAN ===== -->
+<div class="page" id="page-scan">
+  <div class="page-title">領収書・納品書スキャン</div>
+  <div class="page-sub">画像をアップロードするとAIが自動で読み取り、Supabaseに保存します</div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header" style="margin-bottom:10px"><div class="card-title">Claude APIキー</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input class="fi-in" id="scan-apikey" type="password" placeholder="sk-ant-..." style="flex:1;font-family:monospace;font-size:12px" oninput="checkApiKey()"/>
+      <div id="apikey-badge" style="font-size:11px;font-weight:700;padding:5px 12px;border-radius:20px;background:var(--surface2);color:var(--text2);white-space:nowrap">未設定</div>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:4px">console.anthropic.com で取得 — このページ内のみで使用</div>
+  </div>
+
+  <div class="doc-type-bar">
+    <button class="doc-btn active" onclick="setDocType(this,'receipt')">領収書</button>
+    <button class="doc-btn" onclick="setDocType(this,'delivery')">納品書</button>
+    <button class="doc-btn" onclick="setDocType(this,'invoice')">請求書</button>
+    <button class="doc-btn" onclick="setDocType(this,'auto')">自動判定</button>
+  </div>
+
+  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="dov(event)" ondragleave="dol(event)" ondrop="ddr(event)">
+    <div class="drop-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></div>
+    <div class="drop-title" id="drop-title">タップして画像を選択</div>
+    <div class="drop-sub">ドラッグ＆ドロップも可 — <em>JPG / PNG / HEIC / PDF</em></div>
+  </div>
+  <input type="file" id="file-input" accept="image/*,application/pdf" onchange="onFileSelect(event)"/>
+
+  <div id="preview-area" style="display:none">
+    <div class="preview-wrap">
+      <img id="preview-img" class="preview-img" src="" alt=""/>
+      <button class="preview-clear" onclick="clearFile()"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div id="preview-info" style="font-size:12px;color:var(--text2);margin-bottom:14px"></div>
+  </div>
+
+  <div id="scan-err" style="display:none" class="err-box"></div>
+  <button class="btn-main" id="btn-analyze" disabled onclick="runOCR()">AI読み取り → クラウド保存</button>
+
+  <div id="prog-area" style="display:none">
+    <div class="card"><div class="card-header" style="margin-bottom:10px"><div class="card-title">処理状況</div></div><div id="prog-steps"></div></div>
+  </div>
+  <div id="scan-result" style="display:none"></div>
+</div>
+
+<!-- ===== LIST ===== -->
+<div class="page" id="page-list">
+  <div class="page-title">経費一覧・承認</div>
+  <div class="page-sub">承認・摘要の修正・部門変更が可能です</div>
+  <div class="filter-bar">
+    <button class="filter-btn active" onclick="filterList(this,'all')">すべて</button>
+    <button class="filter-btn" onclick="filterList(this,'pending')">承認待ち</button>
+    <button class="filter-btn" onclick="filterList(this,'approved')">承認済み</button>
+    <button class="filter-btn" onclick="filterList(this,'check')">要確認</button>
+    <input class="filter-search" id="list-search" placeholder="取引先・摘要で検索..." oninput="renderList()"/>
+    <button class="btn-primary" style="font-size:12px;padding:7px 14px" onclick="loadExpenses()">更新</button>
+  </div>
+  <div class="table-wrap">
+    <div class="table-header">
+      <div>日付</div><div>取引先</div><div>部門</div><div>金額</div><div>ステータス</div><div>操作</div>
+    </div>
+    <div id="expense-list"><div class="table-empty">読み込み中...</div></div>
+  </div>
+</div>
+
+<!-- ===== ANALYSIS ===== -->
+<div class="page" id="page-analysis">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+    <div class="page-title" style="margin-bottom:0">月次分析</div>
+    <select class="month-select" id="analysis-month" onchange="renderAnalysis()"></select>
+  </div>
+  <div class="page-sub">AIが経費パターンを分析します</div>
+  <div class="insight-card" id="ai-insight">
+    <div class="insight-title">✦ AIインサイト</div>
+    <div class="insight-body" id="insight-body">データを読み込み中...</div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title">取引先ランキング</div></div>
+      <div id="vendor-ranking"><div style="font-size:12px;color:var(--text3)">データなし</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">費目別内訳</div></div>
+      <div id="category-breakdown"><div style="font-size:12px;color:var(--text3)">データなし</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">部門別比較</div></div>
+    <div id="dept-comparison" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px"></div>
+  </div>
+</div>
+
+<!-- ===== VERIFY ===== -->
+<div class="page" id="page-verify">
+  <div class="page-title">請求書照合</div>
+  <div class="page-sub">取引先の請求書と登録済み経費を照合し、差異・入力漏れを確認します</div>
+  <div id="verify-alerts"></div>
+  <div id="verify-grid" class="grid-2"></div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">請求書を手動登録して照合</div></div>
+    <div class="fg">
+      <div class="fi"><div class="fl">取引先名</div><input class="fi-in" id="v-vendor" placeholder="例: ケルヒャージャパン"/></div>
+      <div class="fi"><div class="fl">請求金額</div><input class="fi-in" id="v-amount" type="number" placeholder="例: 158000"/></div>
+      <div class="fi"><div class="fl">対象月</div><input class="fi-in" id="v-month" type="month"/></div>
+      <div class="fi" style="justify-content:flex-end"><button class="btn-primary" style="margin-top:18px" onclick="doVerify()">照合する</button></div>
+    </div>
+    <div id="verify-result" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<!-- ===== DEPTS ===== -->
+<div class="page" id="page-depts">
+  <div class="page-title">部門設定</div>
+  <div class="page-sub">部門ごとにキーワードを登録するとAIの振り分け精度が向上します</div>
+  <div id="dept-list-settings"></div>
+  <button class="btn-primary" onclick="openAddDept()">＋ 部門を追加</button>
+  <div class="card" style="margin-top:20px">
+    <div class="card-header"><div class="card-title">AI学習状況</div></div>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+      <div class="stat-card"><div class="stat-label">学習済みデータ</div><div class="stat-value blue" id="learn-count" style="font-size:18px">—</div></div>
+      <div class="stat-card"><div class="stat-label">振り分け精度</div><div class="stat-value purple" id="learn-acc" style="font-size:18px">—</div></div>
+      <div class="stat-card"><div class="stat-label">登録部門数</div><div class="stat-value green" id="learn-depts" style="font-size:18px">—</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SETTINGS ===== -->
+<div class="page" id="page-settings-page">
+  <div class="page-title">API設定</div>
+  <div class="page-sub">Supabaseの接続情報を設定してください</div>
+  <div class="settings-section">
+    <div class="settings-title">Supabase 接続設定</div>
+    <div class="settings-row">
+      <div class="settings-label">Project URL</div>
+      <input class="settings-input mono" id="cfg-url" placeholder="https://xxxx.supabase.co"/>
+      <div class="settings-hint">Supabase → Settings → API → Project URL</div>
+    </div>
+    <div class="settings-row">
+      <div class="settings-label">Anon Key</div>
+      <input class="settings-input mono" id="cfg-key" type="password" placeholder="eyJhbGci..."/>
+      <div class="settings-hint">Supabase → Settings → API → anon public</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" onclick="saveConfig()">保存して接続</button>
+      <button class="btn-test" onclick="testConn()">接続テスト</button>
+    </div>
+    <div id="conn-result" style="display:none" class="conn-result"></div>
+  </div>
+  <div class="settings-section">
+    <div class="settings-title">データベースセットアップSQL</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:10px">Supabase の SQL Editor に以下を貼り付けて実行してください（初回のみ）</div>
+    <textarea class="settings-input" rows="12" readonly style="font-family:monospace;font-size:11px;resize:none" id="setup-sql"></textarea>
+    <button class="btn-secondary" style="margin-top:8px" onclick="copySQL()">SQLをコピー</button>
+  </div>
+</div>
+
+</div><!-- /main -->
+</div><!-- /body -->
+</div><!-- /app -->
+
+<!-- EXPENSE DETAIL MODAL -->
+<div class="modal-overlay" id="expense-modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">経費詳細</div>
+    <div class="modal-sub" id="modal-id"></div>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">閉じる</button>
+      <button class="btn-primary" onclick="saveExpenseEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- DEPT EDIT MODAL -->
+<div class="modal-overlay" id="dept-modal">
+  <div class="modal">
+    <div class="modal-title" id="dept-modal-title">部門を追加</div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+      <div class="fi"><div class="fl">部門名</div><input class="fi-in" id="dm-name" placeholder="例: 洗車事業"/></div>
+      <div class="fi"><div class="fl">カラー</div><input type="color" id="dm-color" value="#185FA5" style="height:36px;width:60px;border:none;cursor:pointer"/></div>
+      <div class="fi"><div class="fl">キーワード（カンマ区切り）</div><input class="fi-in" id="dm-kw" placeholder="例: ENEOS,洗車,ケルヒャー"/></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeDeptModal()">キャンセル</button>
+      <button class="btn-primary" onclick="saveDept()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== CONFIG =====
+const DEFAULT_URL = 'https://nwkigrnqqctuhlvkakxx.supabase.co';
+const DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53a2lncm5xcWN0dWhsdmtha3h4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNTAxMzksImV4cCI6MjA4OTcyNjEzOX0.GHzFoBJ0ZxVJgBET4qWlIzfJmS_jQVFfyOhBxUQZZHw';
+
+let SB_URL = localStorage.getItem('sb_url') || DEFAULT_URL;
+let SB_KEY = localStorage.getItem('sb_key') || DEFAULT_KEY;
+
+let depts = [];
+let expenses = [];
+let fileData = null, fileMime = null, fileBlob = null, fileName = null;
+let docType = 'receipt';
+let selDept = null;
+let currentFilter = 'all';
+let editingExpenseId = null;
+let editingDeptId = null;
+
+function sbHeaders(extra={}) {
+  return { 'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...extra };
+}
+
+// ===== INIT =====
+window.addEventListener('DOMContentLoaded', async () => {
+  const now = new Date();
+  document.getElementById('header-month').textContent = now.getFullYear()+'年'+(now.getMonth()+1)+'月';
+  document.getElementById('dashboard-date').textContent = now.getFullYear()+'年'+(now.getMonth()+1)+'月 — 経費管理の概要';
+  document.getElementById('cfg-url').value = SB_URL;
+  document.getElementById('cfg-key').value = SB_KEY;
+  document.getElementById('setup-sql').value = SETUP_SQL;
+  setupMonthSelect();
+  await init();
+});
+
+async function init() {
+  const ok = await loadDepts();
+  if (ok) {
+    document.getElementById('setup-banner').className = 'setup-banner hidden';
+    await loadExpenses();
+    renderDashboard();
+    renderDeptSettings();
+    renderAnalysis();
+  } else {
+    document.getElementById('setup-banner').className = 'setup-banner';
+    document.getElementById('pending-list').innerHTML = '<div style="padding:16px;text-align:center;font-size:13px;color:var(--text3)">Supabase未接続</div>';
+  }
+}
+
+async function loadDepts() {
+  try {
+    const r = await fetch(SB_URL+'/rest/v1/departments?select=*&order=created_at', { headers: sbHeaders() });
+    if (!r.ok) return false;
+    depts = await r.json();
+    return depts.length >= 0;
+  } catch(e) { return false; }
+}
+
+async function loadExpenses() {
+  try {
+    const r = await fetch(SB_URL+'/rest/v1/expenses?select=*&order=created_at.desc&limit=200', { headers: sbHeaders() });
+    if (!r.ok) return;
+    expenses = await r.json();
+    renderList();
+    updateBadges();
+  } catch(e) {}
+}
+
+function updateBadges() {
+  const pending = expenses.filter(e => e.status === 'pending').length;
+  const lb = document.getElementById('list-badge');
+  const sb = document.getElementById('scan-badge');
+  if (pending > 0) { lb.style.display=''; lb.textContent=pending; }
+  else lb.style.display='none';
+  sb.style.display='none';
+}
+
+// ===== NAVIGATION =====
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const pg = document.getElementById('page-'+name);
+  if (pg) pg.classList.add('active');
+  const nav = document.getElementById('nav-'+name);
+  if (nav) nav.classList.add('active');
+  if (name === 'list') renderList();
+  if (name === 'analysis') renderAnalysis();
+  if (name === 'depts') renderDeptSettings();
+  if (name === 'verify') renderVerify();
+}
+
+// ===== DASHBOARD =====
+function renderDashboard() {
+  const now = new Date();
+  const thisMonth = expenses.filter(e => {
+    if (!e.date) return false;
+    const d = new Date(e.date);
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  });
+  const total = thisMonth.reduce((s,e) => s+(e.total||0), 0);
+  const pending = expenses.filter(e => e.status==='pending').length;
+  document.getElementById('stat-total').textContent = '¥'+total.toLocaleString();
+  document.getElementById('stat-pending').textContent = pending+'件';
+  document.getElementById('stat-count').textContent = thisMonth.length+'件';
+  document.getElementById('stat-total-delta').textContent = '今月 '+thisMonth.length+'件登録済み';
+
+  const withDept = expenses.filter(e => e.department_id);
+  const acc = expenses.length > 0 ? Math.round(withDept.length/expenses.length*100) : 0;
+  document.getElementById('stat-accuracy').textContent = acc+'%';
+  document.getElementById('stat-learned').textContent = '学習件数 '+expenses.length+'件';
+
+  renderMiniChart();
+  renderDonut(thisMonth);
+  renderPendingList();
+}
+
+function renderMiniChart() {
+  const now = new Date();
+  const months = [];
+  for (let i=5; i>=0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const label = (d.getMonth()+1)+'月';
+    const total = expenses.filter(e => {
+      if (!e.date) return false;
+      const ed = new Date(e.date);
+      return ed.getFullYear()===d.getFullYear() && ed.getMonth()===d.getMonth();
+    }).reduce((s,e)=>s+(e.total||0),0);
+    months.push({label, total});
+  }
+  const max = Math.max(...months.map(m=>m.total), 1);
+  const chart = document.getElementById('mini-chart');
+  const labels = document.getElementById('mini-chart-labels');
+  chart.innerHTML=''; labels.innerHTML='';
+  months.forEach((m,i) => {
+    const col = document.createElement('div'); col.className='bar-col';
+    const bar = document.createElement('div'); bar.className='bar'+(i===5?' active':'');
+    bar.style.height = Math.max(Math.round(m.total/max*100),4)+'%';
+    bar.title = m.label+': ¥'+m.total.toLocaleString();
+    col.appendChild(bar); chart.appendChild(col);
+    const lbl = document.createElement('div'); lbl.style.cssText='font-size:9px;color:var(--text3)';
+    lbl.textContent=m.label; labels.appendChild(lbl);
+  });
+}
+
+function renderDonut(thisMonth) {
+  if (!depts.length) { document.getElementById('donut-wrap').innerHTML='<div style="font-size:12px;color:var(--text3)">部門未設定</div>'; return; }
+  const deptTotals = depts.map(d => ({
+    name: d.name, color: d.color,
+    total: thisMonth.filter(e=>e.department_id===d.id).reduce((s,e)=>s+(e.total||0),0)
+  }));
+  const grandTotal = deptTotals.reduce((s,d)=>s+d.total,0)||1;
+  let offset = 0;
+  const circles = deptTotals.map(d => {
+    const pct = d.total/grandTotal;
+    const dash = Math.round(pct*220);
+    const c = `<circle cx="50" cy="50" r="35" fill="none" stroke="${d.color}" stroke-width="16" stroke-dasharray="${dash} ${220-dash}" stroke-dashoffset="${-offset}" transform="rotate(-90 50 50)"/>`;
+    offset += dash;
+    return c;
+  }).join('');
+  const legendHtml = deptTotals.map(d => `
+    <div class="legend-row">
+      <div class="legend-dot" style="background:${d.color}"></div>
+      <div class="legend-name">${d.name}</div>
+      <div class="legend-pct">${Math.round(d.total/grandTotal*100)}%</div>
+    </div>`).join('');
+  document.getElementById('donut-wrap').innerHTML = `
+    <svg viewBox="0 0 100 100" width="90" height="90">
+      <circle cx="50" cy="50" r="35" fill="none" stroke="var(--surface2)" stroke-width="16"/>
+      ${circles}
+      <text x="50" y="47" text-anchor="middle" font-size="8" fill="var(--text)" font-weight="700">${(now=new Date(),now.getMonth()+1)}月</text>
+      <text x="50" y="57" text-anchor="middle" font-size="7" fill="var(--text2)">合計</text>
+    </svg>
+    <div class="donut-legend">${legendHtml}</div>`;
+}
+
+function renderPendingList() {
+  const pending = expenses.filter(e => e.status==='pending').slice(0,5);
+  if (!pending.length) {
+    document.getElementById('pending-list').innerHTML='<div style="padding:16px;text-align:center;font-size:13px;color:var(--text3)">承認待ちはありません</div>';
+    return;
+  }
+  document.getElementById('pending-list').innerHTML = pending.map(e => {
+    const dept = depts.find(d=>d.id===e.department_id);
+    return `<div class="pending-item">
+      <div class="pi-icon" style="background:${dept?dept.color+'22':'var(--surface2)'}">🧾</div>
+      <div class="pi-info">
+        <div class="pi-name">${e.vendor_name||'取引先不明'}</div>
+        <div class="pi-meta">${e.date||'日付不明'} ${dept?`<span class="dept-tag ${deptClass(dept.name)}">${dept.name}</span>`:''}  <span class="status-pill sp-pending">承認待ち</span></div>
+      </div>
+      <div style="text-align:right">
+        <div class="pi-amount">${e.total!=null?'¥'+e.total.toLocaleString():'—'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ===== SCAN =====
+function checkApiKey() {
+  const k = document.getElementById('scan-apikey').value.trim();
+  const b = document.getElementById('apikey-badge');
+  if (k.startsWith('sk-ant-') && k.length > 20) { b.style.cssText='font-size:11px;font-weight:700;padding:5px 12px;border-radius:20px;background:var(--green-l);color:var(--green);white-space:nowrap'; b.textContent='設定済み'; }
+  else { b.style.cssText='font-size:11px;font-weight:700;padding:5px 12px;border-radius:20px;background:var(--surface2);color:var(--text2);white-space:nowrap'; b.textContent='未設定'; }
+  updateAnalyzeBtn();
+}
+function setDocType(el, t) { document.querySelectorAll('.doc-btn').forEach(b=>b.classList.remove('active')); el.classList.add('active'); docType=t; }
+function updateAnalyzeBtn() {
+  const k = document.getElementById('scan-apikey').value.trim();
+  document.getElementById('btn-analyze').disabled = !(fileData && k.startsWith('sk-ant-') && k.length>20);
+}
+function dov(e){e.preventDefault();document.getElementById('drop-zone').classList.add('drag')}
+function dol(e){document.getElementById('drop-zone').classList.remove('drag')}
+function ddr(e){e.preventDefault();document.getElementById('drop-zone').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)loadFile(f);}
+function onFileSelect(e){const f=e.target.files[0];if(f)loadFile(f);}
+function loadFile(f) {
+  fileMime=f.type; fileBlob=f; fileName=f.name;
+  const r=new FileReader();
+  r.onload=ev=>{
+    fileData=ev.target.result;
+    if (f.type.startsWith('image/')) {
+      document.getElementById('preview-img').src=fileData;
+      document.getElementById('preview-area').style.display='block';
+      document.getElementById('drop-zone').style.display='none';
+    } else {
+      document.getElementById('drop-zone').classList.add('has-file');
+      document.getElementById('drop-title').textContent=f.name+' 読み込み完了';
+    }
+    document.getElementById('preview-info').textContent=f.name+' ('+Math.round(f.size/1024)+'KB)';
+    document.getElementById('scan-err').style.display='none';
+    document.getElementById('scan-result').style.display='none';
+    updateAnalyzeBtn();
+  };
+  r.readAsDataURL(f);
+}
+function clearFile() {
+  fileData=null;fileMime=null;fileBlob=null;fileName=null;
+  document.getElementById('preview-area').style.display='none';
+  const dz=document.getElementById('drop-zone');
+  dz.style.display='block';dz.classList.remove('has-file','drag');
+  document.getElementById('drop-title').textContent='タップして画像を選択';
+  document.getElementById('file-input').value='';
+  document.getElementById('scan-result').style.display='none';
+  document.getElementById('scan-err').style.display='none';
+  updateAnalyzeBtn();
+}
+
+function setProgStep(id, state, sub, time) {
+  const el=document.getElementById('ps-'+id); if(!el) return;
+  const icons={wait:'○',doing:'…',done:'✓',fail:'✗'};
+  el.querySelector('.ps-icon').className='ps-icon ps-'+state;
+  el.querySelector('.ps-icon').textContent=icons[state]||'';
+  if(sub) el.querySelector('.ps-sub').textContent=sub;
+  if(time) el.querySelector('.ps-time').textContent=time;
+}
+
+async function runOCR() {
+  const apiKey = document.getElementById('scan-apikey').value.trim();
+  document.getElementById('scan-err').style.display='none';
+  document.getElementById('scan-result').style.display='none';
+  document.getElementById('btn-analyze').disabled=true;
+
+  const steps=[
+    {id:'ocr',label:'Claude Vision OCR',sub:'画像を解析・テキスト抽出'},
+    {id:'upload',label:'画像をStorageに保存',sub:'Supabase Storage → receipts'},
+    {id:'save',label:'データベースに保存',sub:'expenses テーブル'},
+    {id:'dept',label:'AI部門振り分け',sub:'キーワードマッチング'},
+  ];
+  document.getElementById('prog-steps').innerHTML=steps.map(s=>`
+    <div class="prog-step" id="ps-${s.id}">
+      <div class="ps-icon ps-wait">○</div>
+      <div style="flex:1"><div class="ps-label">${s.label}</div><div class="ps-sub">${s.sub}</div></div>
+      <div class="ps-time"></div>
+    </div>`).join('');
+  document.getElementById('prog-area').style.display='block';
+
+  const docLabel={receipt:'領収書',delivery:'納品書',invoice:'請求書',auto:'書類'}[docType];
+  const t0=Date.now();
+  setProgStep('ocr','doing');
+  const t1=Date.now();
+  const base64=fileData.split(',')[1];
+  const mime=fileMime&&fileMime.startsWith('image/')?fileMime:'image/jpeg';
+
+  const prompt=`あなたは日本の経費管理システムの高精度OCRエンジンです。
+添付された${docLabel}の画像を詳細に解析し、以下のJSON形式で情報を抽出してください。
+
+抽出ルール:
+- 金額は数値のみ（カンマ・円記号なし）
+- 日付はYYYY-MM-DD形式
+- 読み取れない・不明な項目はnull（推測しない）
+- 必ずJSONのみ返答（コードブロック・説明文なし）
+
+{
+  "doc_type": "receipt",
+  "vendor": {"name": null, "address": null, "tel": null, "registration_number": null},
+  "date": null,
+  "doc_number": null,
+  "items": [{"name": null, "qty": null, "unit_price": null, "amount": null}],
+  "subtotal": null,
+  "tax_8": null,
+  "tax_10": null,
+  "total": null,
+  "payment_method": "現金",
+  "memo": null,
+  "confidence": {"overall": 0.9, "vendor": 0.9, "date": 0.9, "total": 0.9, "items": 0.8},
+  "ocr_notes": null
+}`;
+
+  let parsed=null;
+  try {
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1500,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mime,data:base64}},{type:'text',text:prompt}]}]})
+    });
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error?.message||'API '+res.status);}
+    const d=await res.json();
+    const txt=d.content.map(c=>c.text||'').join('');
+    parsed=JSON.parse(txt.replace(/```json|```/g,'').trim());
+  } catch(e) {
+    setProgStep('ocr','fail',e.message.slice(0,60));
+    document.getElementById('scan-err').textContent='OCRエラー: '+e.message;
+    document.getElementById('scan-err').style.display='block';
+    document.getElementById('btn-analyze').disabled=false;
+    return;
+  }
+  setProgStep('ocr','done',null,((Date.now()-t1)/1000).toFixed(1)+'s');
+
+  setProgStep('upload','doing');
+  const t2=Date.now();
+  let uploadedPath=null;
+  try {
+    const ext=fileMime==='image/png'?'png':'jpg';
+    const path='receipts/'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.'+ext;
+    const upRes=await fetch(SB_URL+'/storage/v1/object/'+path,{
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':fileMime||'image/jpeg','x-upsert':'true'},
+      body:fileBlob
+    });
+    if(!upRes.ok){const ue=await upRes.json().catch(()=>({}));throw new Error(ue.message||'Storage '+upRes.status);}
+    uploadedPath=path;
+    setProgStep('upload','done','保存完了',((Date.now()-t2)/1000).toFixed(1)+'s');
+  } catch(e) {
+    setProgStep('upload','fail','Storageバケット未作成の可能性');
+    uploadedPath=null;
+  }
+
+  setProgStep('save','doing');
+  const t3=Date.now();
+  const deptGuess=guessDept(parsed);
+  selDept=deptGuess[0]?.dept||null;
+  const imageUrl=uploadedPath?SB_URL+'/storage/v1/object/public/'+uploadedPath:null;
+  let savedId=null;
+  try {
+    const payload={
+      doc_type:parsed.doc_type||docType,
+      vendor_name:parsed.vendor?.name||null,
+      vendor_address:parsed.vendor?.address||null,
+      vendor_tel:parsed.vendor?.tel||null,
+      invoice_number:parsed.vendor?.registration_number||null,
+      date:parsed.date||null,
+      doc_number:parsed.doc_number||null,
+      items:parsed.items||null,
+      subtotal:parsed.subtotal||null,
+      tax_8:parsed.tax_8||null,
+      tax_10:parsed.tax_10||null,
+      total:parsed.total||null,
+      payment_method:parsed.payment_method||null,
+      memo:parsed.memo||null,
+      department_id:selDept?.id||null,
+      status:'pending',
+      image_url:imageUrl,
+      image_path:uploadedPath,
+      ai_confidence:parsed.confidence||null,
+      ai_raw:parsed
+    };
+    const saveRes=await fetch(SB_URL+'/rest/v1/expenses',{
+      method:'POST',headers:sbHeaders(),body:JSON.stringify(payload)
+    });
+    if(!saveRes.ok){const se=await saveRes.json().catch(()=>({}));throw new Error(JSON.stringify(se));}
+    const saved=await saveRes.json();
+    savedId=Array.isArray(saved)?saved[0]?.id:saved?.id;
+    setProgStep('save','done','ID: '+(savedId||'取得済み'),((Date.now()-t3)/1000).toFixed(1)+'s');
+    expenses.unshift({...payload,id:savedId});
+    updateBadges();
+  } catch(e) {
+    setProgStep('save','fail',e.message.slice(0,60));
+    document.getElementById('scan-err').textContent='保存エラー: '+e.message;
+    document.getElementById('scan-err').style.display='block';
+    document.getElementById('btn-analyze').disabled=false;
+    return;
+  }
+
+  setProgStep('dept','done',selDept?selDept.name:'推定完了');
+  renderScanResult(parsed, deptGuess, savedId, uploadedPath);
+  document.getElementById('btn-analyze').disabled=false;
+  renderDashboard();
+}
+
+function guessDept(p) {
+  const text=[p.vendor?.name,p.memo,...(p.items||[]).map(i=>i.name)].filter(Boolean).join(' ');
+  const scores=depts.map(d=>{
+    let score=0;
+    (d.keywords||[]).forEach(kw=>{if(text.includes(kw))score+=0.35;});
+    return {dept:d,score:Math.min(score,0.97)};
+  });
+  scores.sort((a,b)=>b.score-a.score);
+  if(scores.length&&scores[0].score===0)scores[0].score=0.3;
+  return scores.slice(0,3).filter(s=>s.score>0);
+}
+
+function confClass(v){return v>=0.85?'cp-high':v>=0.6?'cp-mid':'cp-low';}
+function confLabel(v){return v>=0.85?'高精度 '+Math.round(v*100)+'%':v>=0.6?'中精度 '+Math.round(v*100)+'%':'要確認 '+Math.round(v*100)+'%';}
+function fa(v){return v!=null?'¥'+Number(v).toLocaleString():'—';}
+
+function renderScanResult(p, deptSuggestions, savedId, imgPath) {
+  const conf=p.confidence||{};
+  const ov=conf.overall||0.8;
+  const itemsHtml=(p.items||[]).length>0?`
+    <table class="items-tbl"><thead><tr><th>品名</th><th style="text-align:right">数量</th><th style="text-align:right">単価</th><th style="text-align:right">金額</th></tr></thead>
+    <tbody>${(p.items||[]).map(it=>`<tr><td>${it.name||'—'}</td><td class="num">${it.qty!=null?it.qty:'—'}</td><td class="num">${it.unit_price!=null?fa(it.unit_price):'—'}</td><td class="num">${fa(it.amount)}</td></tr>`).join('')}</tbody></table>`
+    :'<div style="font-size:12px;color:var(--text3)">明細なし</div>';
+  const taxHtml=(p.tax_8!=null||p.tax_10!=null)?`<div class="fg" style="margin-top:8px">${p.tax_8!=null?`<div class="fi"><div class="fl">消費税8%</div><input class="fi-in ai" value="${fa(p.tax_8)}"/></div>`:''} ${p.tax_10!=null?`<div class="fi"><div class="fl">消費税10%</div><input class="fi-in ai" value="${fa(p.tax_10)}"/></div>`:''}</div>`:'';
+  const notesHtml=p.ocr_notes?`<div style="margin-top:10px;padding:9px 12px;background:var(--amber-l);border-radius:8px;font-size:12px;color:var(--amber)">注意: ${p.ocr_notes}</div>`:'';
+  const deptHtml=deptSuggestions.map((s,i)=>`
+    <div class="dept-opt ${i===0?'sel':''}" onclick="selDeptScan(this,'${s.dept.id}','${savedId||''}')">
+      <span class="dept-tag ${deptClass(s.dept.name)}">${s.dept.name}</span>
+      <span style="flex:1;font-size:12px;color:var(--text2)">${s.score>=0.6?'キーワード一致':'部分一致'}</span>
+      <span style="font-size:11px;font-weight:700;color:${s.score>=0.85?'var(--green)':s.score>=0.6?'var(--amber)':'var(--red)'}">${Math.round(s.score*100)}%</span>
+    </div>`).join('');
+
+  document.getElementById('scan-result').innerHTML=`
+    ${savedId?`<div class="saved-banner">
+      <div class="saved-icon"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div>
+      <div class="saved-title">Supabaseに保存完了</div>
+      <div style="font-size:12px;color:var(--green)">経費データと画像がクラウドに記録されました</div>
+      <div class="saved-id">ID: ${savedId}</div>
+      ${imgPath?`<div class="storage-info">画像: ${imgPath}</div>`:''}
+    </div>`:''}
+    <div class="result-card accent">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700">読み取り結果</div>
+        <div class="conf-pill ${confClass(ov)}">${confLabel(ov)}</div>
+      </div>
+      <div class="fg">
+        <div class="fi full"><div class="fl">取引先 <span class="fc" style="color:${(conf.vendor||0)>=0.85?'var(--green)':'var(--amber)'}">${Math.round((conf.vendor||0.8)*100)}%</span></div><input class="fi-in ai" id="rv-${savedId}" value="${p.vendor?.name||''}"/></div>
+        <div class="fi"><div class="fl">日付</div><input class="fi-in ai" id="rd-${savedId}" type="date" value="${p.date||''}"/></div>
+        <div class="fi"><div class="fl">伝票番号</div><input class="fi-in ai" value="${p.doc_number||''}"/></div>
+        <div class="fi"><div class="fl">合計金額 <span class="fc" style="color:${(conf.total||0)>=0.85?'var(--green)':'var(--amber)'}">${Math.round((conf.total||0.8)*100)}%</span></div><input class="fi-in ai" id="rt-${savedId}" value="${fa(p.total)}" style="font-weight:700;font-size:15px"/></div>
+        <div class="fi"><div class="fl">支払方法</div><select class="fi-sel" id="rp-${savedId}"><option ${p.payment_method==='現金'?'selected':''}>現金</option><option ${p.payment_method==='カード'?'selected':''}>カード</option><option ${p.payment_method==='振込'?'selected':''}>振込</option><option>不明</option></select></div>
+      </div>
+      ${taxHtml}
+      <div style="margin-top:12px"><div class="fl" style="margin-bottom:6px">明細</div>${itemsHtml}</div>
+      <div class="fg" style="margin-top:12px"><div class="fi full"><div class="fl">摘要</div><input class="fi-in" id="rm-${savedId}" placeholder="摘要を入力..." value="${p.memo||''}"/></div></div>
+      ${notesHtml}
+    </div>
+    <div class="result-card">
+      <div style="font-size:13px;font-weight:700;margin-bottom:12px">部門振り分け (AI提案)</div>
+      <div>${deptHtml}</div>
+    </div>
+    <div class="actions-row">
+      <button class="btn-primary" onclick="updateScanRecord('${savedId||''}')">修正内容を更新</button>
+      <button class="btn-secondary" onclick="clearFile();document.getElementById('scan-result').style.display='none';">次の書類へ</button>
+    </div>`;
+  document.getElementById('scan-result').style.display='block';
+}
+
+async function selDeptScan(el, deptId, expId) {
+  document.querySelectorAll('.dept-opt').forEach(e=>e.classList.remove('sel'));
+  el.classList.add('sel');
+  selDept = depts.find(d=>d.id===deptId)||null;
+  if (expId && SB_URL) {
+    try {
+      await fetch(SB_URL+'/rest/v1/expenses?id=eq.'+expId, {
+        method:'PATCH', headers:sbHeaders(), body:JSON.stringify({department_id:deptId,updated_at:new Date().toISOString()})
+      });
+    } catch(e){}
+  }
+}
+
+async function updateScanRecord(id) {
+  if (!id) { showToast('保存IDが見つかりません'); return; }
+  const vendor=document.getElementById('rv-'+id)?.value||'';
+  const date=document.getElementById('rd-'+id)?.value||null;
+  const memo=document.getElementById('rm-'+id)?.value||null;
+  const totalRaw=document.getElementById('rt-'+id)?.value?.replace(/[¥,]/g,'')||null;
+  try {
+    const r=await fetch(SB_URL+'/rest/v1/expenses?id=eq.'+id, {
+      method:'PATCH', headers:sbHeaders(),
+      body:JSON.stringify({vendor_name:vendor,date:date||null,memo,total:totalRaw?parseInt(totalRaw):null,department_id:selDept?.id||null,updated_at:new Date().toISOString()})
+    });
+    if(!r.ok) throw new Error(r.status);
+    showToast('更新しました ✓');
+    await loadExpenses();
+    renderDashboard();
+  } catch(e) { showToast('更新エラー: '+e.message); }
+}
+
+// ===== LIST =====
+function filterList(btn, status) {
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  currentFilter=status;
+  renderList();
+}
+
+function renderList() {
+  const search=(document.getElementById('list-search')?.value||'').toLowerCase();
+  let filtered=expenses.filter(e=>{
+    if(currentFilter!=='all'&&e.status!==currentFilter)return false;
+    if(search&&!(e.vendor_name||'').toLowerCase().includes(search)&&!(e.memo||'').toLowerCase().includes(search))return false;
+    return true;
+  });
+  if(!filtered.length){
+    document.getElementById('expense-list').innerHTML='<div class="table-empty">該当する経費がありません</div>';
+    return;
+  }
+  document.getElementById('expense-list').innerHTML=filtered.map(e=>{
+    const dept=depts.find(d=>d.id===e.department_id);
+    const spClass=e.status==='approved'?'sp-approved':e.status==='check'?'sp-check':'sp-pending';
+    const spLabel=e.status==='approved'?'承認済み':e.status==='check'?'要確認':'承認待ち';
+    return `<div class="table-row" onclick="openExpenseModal('${e.id}')">
+      <div style="color:var(--text2);font-size:12px">${e.date||'—'}</div>
+      <div><div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.vendor_name||'取引先不明'}</div><div style="font-size:11px;color:var(--text3)">${e.memo||''}</div></div>
+      <div>${dept?`<span class="dept-tag ${deptClass(dept.name)}">${dept.name}</span>`:'<span style="font-size:11px;color:var(--text3)">未設定</span>'}</div>
+      <div style="font-weight:700">${e.total!=null?'¥'+e.total.toLocaleString():'—'}</div>
+      <div><span class="status-pill ${spClass}">${spLabel}</span></div>
+      <div onclick="event.stopPropagation()"><button class="btn-sm approve" onclick="approveExpense('${e.id}')">承認</button></div>
+    </div>`;
+  }).join('');
+}
+
+async function approveExpense(id) {
+  try {
+    await fetch(SB_URL+'/rest/v1/expenses?id=eq.'+id, {
+      method:'PATCH', headers:sbHeaders(), body:JSON.stringify({status:'approved',updated_at:new Date().toISOString()})
+    });
+    const idx=expenses.findIndex(e=>e.id===id);
+    if(idx>=0)expenses[idx].status='approved';
+    renderList(); updateBadges(); renderDashboard();
+    showToast('承認しました ✓');
+  } catch(e) { showToast('エラー: '+e.message); }
+}
+
+function openExpenseModal(id) {
+  const e=expenses.find(ex=>ex.id===id);
+  if(!e) return;
+  editingExpenseId=id;
+  const dept=depts.find(d=>d.id===e.department_id);
+  document.getElementById('modal-title').textContent=e.vendor_name||'経費詳細';
+  document.getElementById('modal-id').textContent='ID: '+id;
+  const deptOptions=depts.map(d=>`<option value="${d.id}" ${d.id===e.department_id?'selected':''}>${d.name}</option>`).join('');
+  document.getElementById('modal-body').innerHTML=`
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+      <div class="fi"><div class="fl">取引先</div><input class="fi-in" id="me-vendor" value="${e.vendor_name||''}"/></div>
+      <div class="fg">
+        <div class="fi"><div class="fl">日付</div><input class="fi-in" id="me-date" type="date" value="${e.date||''}"/></div>
+        <div class="fi"><div class="fl">合計金額</div><input class="fi-in" id="me-total" type="number" value="${e.total||''}"/></div>
+      </div>
+      <div class="fi"><div class="fl">摘要</div><input class="fi-in" id="me-memo" value="${e.memo||''}"/></div>
+      <div class="fi"><div class="fl">部門</div><select class="fi-sel" id="me-dept">${deptOptions}<option value="">未設定</option></select></div>
+      <div class="fi"><div class="fl">ステータス</div>
+        <select class="fi-sel" id="me-status">
+          <option value="pending" ${e.status==='pending'?'selected':''}>承認待ち</option>
+          <option value="approved" ${e.status==='approved'?'selected':''}>承認済み</option>
+          <option value="check" ${e.status==='check'?'selected':''}>要確認</option>
+        </select>
+      </div>
+      ${e.image_url?`<div><div class="fl" style="margin-bottom:4px">領収書画像</div><img src="${e.image_url}" style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;border:0.5px solid var(--border)"/></div>`:''}
+    </div>`;
+  document.getElementById('expense-modal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('expense-modal').classList.remove('open'); editingExpenseId=null; }
+
+async function saveExpenseEdit() {
+  if(!editingExpenseId) return;
+  const vendor=document.getElementById('me-vendor').value;
+  const date=document.getElementById('me-date').value||null;
+  const total=parseInt(document.getElementById('me-total').value)||null;
+  const memo=document.getElementById('me-memo').value||null;
+  const deptId=document.getElementById('me-dept').value||null;
+  const status=document.getElementById('me-status').value;
+  try {
+    await fetch(SB_URL+'/rest/v1/expenses?id=eq.'+editingExpenseId, {
+      method:'PATCH', headers:sbHeaders(),
+      body:JSON.stringify({vendor_name:vendor,date,total,memo,department_id:deptId,status,updated_at:new Date().toISOString()})
+    });
+    const idx=expenses.findIndex(e=>e.id===editingExpenseId);
+    if(idx>=0) expenses[idx]={...expenses[idx],vendor_name:vendor,date,total,memo,department_id:deptId,status};
+    closeModal(); renderList(); updateBadges(); renderDashboard();
+    showToast('更新しました ✓');
+  } catch(e) { showToast('更新エラー: '+e.message); }
+}
+
+// ===== ANALYSIS =====
+function setupMonthSelect() {
+  const sel=document.getElementById('analysis-month');
+  const now=new Date();
+  for(let i=0;i<12;i++) {
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    const val=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    const label=d.getFullYear()+'年'+(d.getMonth()+1)+'月';
+    const opt=document.createElement('option');
+    opt.value=val; opt.textContent=label;
+    if(i===0)opt.selected=true;
+    sel.appendChild(opt);
+  }
+}
+
+function renderAnalysis() {
+  const [year,month]=document.getElementById('analysis-month').value.split('-').map(Number);
+  const monthData=expenses.filter(e=>{
+    if(!e.date)return false;
+    const d=new Date(e.date);
+    return d.getFullYear()===year&&d.getMonth()+1===month;
+  });
+  const total=monthData.reduce((s,e)=>s+(e.total||0),0);
+  const count=monthData.length;
+
+  // Insight
+  const topVendor=getTopVendors(monthData)[0];
+  const topDept=depts.map(d=>({name:d.name,total:monthData.filter(e=>e.department_id===d.id).reduce((s,e)=>s+(e.total||0),0)})).sort((a,b)=>b.total-a.total)[0];
+  document.getElementById('insight-body').innerHTML=count>0
+    ?`今月（${year}年${month}月）は合計 <strong>${count}件・¥${total.toLocaleString()}</strong> の経費が登録されています。${topVendor?`最も多い取引先は <strong>${topVendor.name}（¥${topVendor.total.toLocaleString()}）</strong>です。`:''}${topDept&&topDept.total>0?`部門別では <strong>${topDept.name}</strong> の割合が最大です。`:''}`
+    :'この月の経費データはありません。領収書をスキャンして登録してください。';
+
+  // Vendor ranking
+  const vendors=getTopVendors(monthData).slice(0,7);
+  const maxV=vendors[0]?.total||1;
+  document.getElementById('vendor-ranking').innerHTML=vendors.length?vendors.map((v,i)=>`
+    <div class="vendor-row">
+      <div class="vendor-rank">${i+1}</div>
+      <div class="vendor-name">${v.name}</div>
+      <div class="vendor-bar-wrap"><div class="vendor-bar" style="width:${Math.round(v.total/maxV*100)}%"></div></div>
+      <div class="vendor-amt">${fa(v.total)}</div>
+    </div>`).join(''):'<div style="font-size:12px;color:var(--text3)">データなし</div>';
+
+  // Category
+  const cats={};
+  monthData.forEach(e=>{
+    const cat=e.doc_type||'その他';
+    cats[cat]=(cats[cat]||0)+(e.total||0);
+  });
+  const catList=Object.entries(cats).sort((a,b)=>b[1]-a[1]);
+  const maxC=catList[0]?.[1]||1;
+  const catColors=['#185FA5','#0F6E56','#BA7517','#534AB7','#888780'];
+  document.getElementById('category-breakdown').innerHTML=catList.length?catList.map(([k,v],i)=>`
+    <div class="vendor-row">
+      <div class="vendor-name" style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${catColors[i%catColors.length]};display:inline-block"></span>${k}</div>
+      <div class="vendor-bar-wrap"><div class="vendor-bar" style="width:${Math.round(v/maxC*100)}%;background:${catColors[i%catColors.length]}"></div></div>
+      <div class="vendor-amt">${fa(v)}</div>
+    </div>`).join(''):'<div style="font-size:12px;color:var(--text3)">データなし</div>';
+
+  // Dept comparison
+  const prevMonthData=expenses.filter(e=>{
+    if(!e.date)return false;
+    const d=new Date(e.date);
+    const pm=new Date(year,month-2,1);
+    return d.getFullYear()===pm.getFullYear()&&d.getMonth()===pm.getMonth();
+  });
+  document.getElementById('dept-comparison').innerHTML=depts.map(d=>{
+    const cur=monthData.filter(e=>e.department_id===d.id).reduce((s,e)=>s+(e.total||0),0);
+    const prev=prevMonthData.filter(e=>e.department_id===d.id).reduce((s,e)=>s+(e.total||0),0);
+    const diff=prev>0?Math.round((cur-prev)/prev*100):null;
+    return `<div style="text-align:center">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${d.name}</div>
+      <div style="font-size:18px;font-weight:700;color:${d.color}">${fa(cur)}</div>
+      <div style="font-size:11px;color:var(--text3)">前月 ${fa(prev)}</div>
+      ${diff!=null?`<div style="font-size:11px;color:${diff>10?'var(--red)':diff<-10?'var(--green)':'var(--text3)'}">${diff>0?'+':''}${diff}%</div>`:'<div style="font-size:11px;color:var(--text3)">—</div>'}
+    </div>`;
+  }).join('');
+}
+
+function getTopVendors(data) {
+  const map={};
+  data.forEach(e=>{
+    const k=e.vendor_name||'不明';
+    map[k]=(map[k]||0)+(e.total||0);
+  });
+  return Object.entries(map).map(([name,total])=>({name,total})).sort((a,b)=>b.total-a.total);
+}
+
+// ===== VERIFY =====
+function renderVerify() {
+  const alerts=[];
+  const grid=[];
+  const now=new Date();
+  const thisMonth=expenses.filter(e=>{
+    if(!e.date)return false;
+    const d=new Date(e.date);
+    return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();
+  });
+  const vendors=getTopVendors(thisMonth);
+  vendors.slice(0,4).forEach(v=>{
+    grid.push(`<div class="card">
+      <div class="card-header"><div class="card-title">${v.name}</div></div>
+      <div class="verify-item"><span>登録済み合計</span><span style="font-weight:700">${fa(v.total)}</span></div>
+      <div class="verify-item" style="border:none"><span>件数</span><span>${thisMonth.filter(e=>e.vendor_name===v.name).length}件</span></div>
+    </div>`);
+  });
+  if(!vendors.length)alerts.push(`<div class="alert-box ab-warn"><span>！</span><div>今月の経費データがありません</div></div>`);
+  document.getElementById('verify-alerts').innerHTML=alerts.join('');
+  document.getElementById('verify-grid').innerHTML=grid.join('');
+  const now2=new Date();
+  document.getElementById('v-month').value=now2.getFullYear()+'-'+String(now2.getMonth()+1).padStart(2,'0');
+}
+
+function doVerify() {
+  const vendor=document.getElementById('v-vendor').value.trim();
+  const amount=parseInt(document.getElementById('v-amount').value)||0;
+  const [y,m]=document.getElementById('v-month').value.split('-').map(Number);
+  if(!vendor||!amount){showToast('取引先と金額を入力してください');return;}
+  const matched=expenses.filter(e=>{
+    if(!e.date)return false;
+    const d=new Date(e.date);
+    return e.vendor_name===vendor&&d.getFullYear()===y&&d.getMonth()+1===m;
+  });
+  const registered=matched.reduce((s,e)=>s+(e.total||0),0);
+  const diff=amount-registered;
+  let html='';
+  if(diff===0){html=`<div class="alert-box ab-ok"><span>✓</span><div><strong>照合完了</strong> — ${vendor}の請求額と登録額が一致しています（¥${amount.toLocaleString()}）</div></div>`;}
+  else if(diff>0){html=`<div class="alert-box ab-danger"><span>⚠</span><div><strong>差額あり</strong> — 請求 ¥${amount.toLocaleString()} に対して登録済みは ¥${registered.toLocaleString()}（¥${diff.toLocaleString()} 未登録の可能性）</div></div>`;}
+  else{html=`<div class="alert-box ab-warn"><span>！</span><div>登録額（¥${registered.toLocaleString()}）が請求額（¥${amount.toLocaleString()}）を超えています。重複登録の可能性があります。</div></div>`;}
+  document.getElementById('verify-result').innerHTML=html;
+}
+
+// ===== DEPT SETTINGS =====
+function renderDeptSettings() {
+  document.getElementById('dept-list-settings').innerHTML=depts.map(d=>`
+    <div class="dept-card">
+      <div class="dept-color-bar" style="background:${d.color}"></div>
+      <div class="dept-info">
+        <div class="dept-name">${d.name}</div>
+        <div class="dept-kw">${(d.keywords||[]).join('、')}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-sm" onclick="openEditDept('${d.id}')">編集</button>
+        <button class="btn-sm" style="color:var(--red)" onclick="deleteDept('${d.id}')">削除</button>
+      </div>
+    </div>`).join('');
+  document.getElementById('learn-count').textContent=expenses.length;
+  document.getElementById('learn-acc').textContent=(expenses.length?Math.round(expenses.filter(e=>e.department_id).length/expenses.length*100):0)+'%';
+  document.getElementById('learn-depts').textContent=depts.length;
+}
+
+function openAddDept(){editingDeptId=null;document.getElementById('dept-modal-title').textContent='部門を追加';document.getElementById('dm-name').value='';document.getElementById('dm-color').value='#185FA5';document.getElementById('dm-kw').value='';document.getElementById('dept-modal').classList.add('open');}
+function openEditDept(id){
+  const d=depts.find(x=>x.id===id);if(!d)return;
+  editingDeptId=id;
+  document.getElementById('dept-modal-title').textContent='部門を編集';
+  document.getElementById('dm-name').value=d.name;
+  document.getElementById('dm-color').value=d.color||'#185FA5';
+  document.getElementById('dm-kw').value=(d.keywords||[]).join(',');
+  document.getElementById('dept-modal').classList.add('open');
+}
+function closeDeptModal(){document.getElementById('dept-modal').classList.remove('open');editingDeptId=null;}
+
+async function saveDept() {
+  const name=document.getElementById('dm-name').value.trim();
+  const color=document.getElementById('dm-color').value;
+  const keywords=document.getElementById('dm-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
+  if(!name){showToast('部門名を入力してください');return;}
+  try {
+    if(editingDeptId){
+      await fetch(SB_URL+'/rest/v1/departments?id=eq.'+editingDeptId,{method:'PATCH',headers:sbHeaders(),body:JSON.stringify({name,color,keywords})});
+      const idx=depts.findIndex(d=>d.id===editingDeptId);
+      if(idx>=0)depts[idx]={...depts[idx],name,color,keywords};
+    } else {
+      const r=await fetch(SB_URL+'/rest/v1/departments',{method:'POST',headers:sbHeaders(),body:JSON.stringify({name,color,keywords})});
+      const saved=await r.json();
+      depts.push(Array.isArray(saved)?saved[0]:saved);
+    }
+    closeDeptModal(); renderDeptSettings(); showToast('保存しました ✓');
+  } catch(e){showToast('エラー: '+e.message);}
+}
+
+async function deleteDept(id) {
+  if(!confirm('この部門を削除しますか？'))return;
+  try {
+    await fetch(SB_URL+'/rest/v1/departments?id=eq.'+id,{method:'DELETE',headers:sbHeaders()});
+    depts=depts.filter(d=>d.id!==id);
+    renderDeptSettings(); showToast('削除しました');
+  } catch(e){showToast('エラー: '+e.message);}
+}
+
+// ===== SETTINGS =====
+function saveConfig(){
+  SB_URL=document.getElementById('cfg-url').value.trim();
+  SB_KEY=document.getElementById('cfg-key').value.trim();
+  localStorage.setItem('sb_url',SB_URL);
+  localStorage.setItem('sb_key',SB_KEY);
+  init(); showToast('設定を保存しました ✓');
+}
+
+async function testConn(){
+  const url=document.getElementById('cfg-url').value.trim();
+  const key=document.getElementById('cfg-key').value.trim();
+  const el=document.getElementById('conn-result');
+  el.style.display='block'; el.className='conn-result'; el.textContent='接続確認中...';
+  try {
+    const r=await fetch(url+'/rest/v1/departments?select=count',{headers:{'apikey':key,'Authorization':'Bearer '+key}});
+    if(r.ok){el.className='conn-result ok';el.textContent='✓ 接続成功 — Supabaseに正常に接続できました';}
+    else{el.className='conn-result err';el.textContent='✗ 接続失敗 ('+r.status+') — URLとキーを確認してください';}
+  }catch(e){el.className='conn-result err';el.textContent='✗ 接続エラー: '+e.message;}
+}
+
+function copySQL(){
+  navigator.clipboard.writeText(SETUP_SQL).then(()=>showToast('SQLをコピーしました ✓')).catch(()=>showToast('コピーに失敗しました'));
+}
+
+// ===== HELPERS =====
+function deptClass(name){
+  if(!name)return 'dt-other';
+  if(name.includes('洗車'))return 'dt-wash';
+  if(name.includes('車両'))return 'dt-car';
+  if(name.includes('飲食'))return 'dt-food';
+  if(name.includes('管理'))return 'dt-admin';
+  return 'dt-other';
+}
+
+function showToast(msg){
+  const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+// ===== SETUP SQL =====
+const SETUP_SQL = `-- 部門テーブル
+create table if not exists departments (
+  id uuid default gen_random_uuid() primary key,
+  name text not null,
+  color text,
+  keywords text[],
+  created_at timestamptz default now()
+);
+
+-- 経費テーブル
+create table if not exists expenses (
+  id uuid default gen_random_uuid() primary key,
+  doc_type text,
+  vendor_name text,
+  vendor_address text,
+  vendor_tel text,
+  invoice_number text,
+  date date,
+  doc_number text,
+  items jsonb,
+  subtotal integer,
+  tax_8 integer,
+  tax_10 integer,
+  total integer,
+  payment_method text,
+  memo text,
+  department_id uuid references departments(id),
+  status text default 'pending',
+  image_url text,
+  image_path text,
+  ai_confidence jsonb,
+  ai_raw jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- ストレージバケット
+insert into storage.buckets (id, name, public)
+values ('receipts', 'receipts', false)
+on conflict (id) do nothing;
+
+-- アクセス制御
+alter table expenses enable row level security;
+alter table departments enable row level security;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename='expenses' and policyname='allow all') then
+    create policy "allow all" on expenses for all using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename='departments' and policyname='allow all') then
+    create policy "allow all" on departments for all using (true);
+  end if;
+end $$;
+
+create policy "storage allow all" on storage.objects
+  for all using (bucket_id = 'receipts')
+  on conflict do nothing;
+
+-- 初期部門データ
+insert into departments (name, color, keywords)
+select * from (values
+  ('洗車事業', '#185FA5', array['ENEOS','コスモ','ケルヒャー','洗車','燃料','洗剤','高圧洗浄']),
+  ('車両販売', '#0F6E56', array['オートバックス','トヨタ','日産','ホンダ','部品','タイヤ','バッテリー','車検']),
+  ('飲食事業', '#BA7517', array['食材','仕入れ','業務スーパー','食品','やよい','飲食','食料']),
+  ('管理部門', '#534AB7', array['事務','文具','通信','光熱','水道','コピー','郵便'])
+) as v(name, color, keywords)
+where not exists (select 1 from departments limit 1);`;
+</script>
+</body>
+</html>
