@@ -1718,6 +1718,23 @@ const now=new Date();
 
 // ===== SUPABASE HELPERS =====
 function sbH(){return{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'}}
+
+function normalizeDate(d){
+  if(!d)return null;
+  // Already YYYY-MM-DD
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;
+  // 2026年6月3日 → 2026-06-03
+  const m1=d.match(/(\d{4})[年\/\-](\d{1,2})[月\/\-](\d{1,2})/);
+  if(m1)return m1[1]+'-'+m1[2].padStart(2,'0')+'-'+m1[3].padStart(2,'0');
+  // 26/6/3 or 2026/6/3
+  const m2=d.match(/(\d{2,4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if(m2){
+    const y=m2[1].length===2?'20'+m2[1]:m2[1];
+    return y+'-'+m2[2].padStart(2,'0')+'-'+m2[3].padStart(2,'0');
+  }
+  return null; // cannot parse
+}
+
 function monthEnd(y,m){return new Date(parseInt(y),parseInt(m),0).getDate()} // 月の最終日を返す
 function monthEndStr(y,m){return `${y}-${m}-${String(monthEnd(y,m)).padStart(2,'0')}`}
 async function sbGet(p){const r=await fetch(SB_URL+'/rest/v1/'+p,{headers:sbH()});if(!r.ok)throw new Error(await r.text());return r.json()}
@@ -2317,7 +2334,7 @@ async function saveAllStaffReceipts(){
         store_id:currentUser.store_id,
         doc_type:item.data.type||'receipt',
         vendor_name:item.data.vendor_name||null,
-        date:item.data.date||null,
+        date:normalizeDate(item.data.date)||null,
         total:item.data.total||null,
         tax_8:item.data.tax_8||null,
         tax_10:item.data.tax_10||null,
@@ -4444,7 +4461,7 @@ async function saveAllMultiReceipts(){
         store_id:item.storeId||ownerScanStoreId,
         doc_type:item.data.type||'receipt',
         vendor_name:item.data.vendor_name||null,
-        date:item.data.date||null,
+        date:normalizeDate(item.data.date)||null,
         total:item.data.total||null,
         tax_8:item.data.tax_8||null,
         tax_10:item.data.tax_10||null,
