@@ -1719,17 +1719,24 @@ document.getElementById('login-pass').addEventListener('keydown',e=>{if(e.key===
 
 async function loadLoginUsers(){
   const sel=document.getElementById('login-user');
-  try{
-    const users=await sbGet('app_users?select=id,username,role,store_id&order=role.desc,username.asc');
+  let users=null;
+  // Attempt 1: carwash schema
+  try{users=await sbGet('app_users?select=id,username,role,store_id&order=role.desc,username.asc');}catch(e){}
+  // Attempt 2: public schema
+  if(!users||!users.length){
+    try{
+      const r=await fetch(SB_URL+'/rest/v1/app_users?select=id,username,role,store_id&order=role.desc,username.asc',
+        {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+      if(r.ok)users=await r.json();
+    }catch(e){}
+  }
+  if(users&&users.length){
     sel.innerHTML=users.map(u=>{
-      const store=null; // stores not loaded yet at login time
       const label=u.role==='owner'?u.username+' (オーナー)':u.username;
       return '<option value="'+u.username+'">'+label+'</option>';
     }).join('');
-    if(!users.length)sel.innerHTML='<option value="">ユーザーがいません</option>';
-  }catch(e){
-    // fallback if DB not accessible
-    sel.innerHTML='<option value="owner">owner (オーナー)</option><option value="staff_a">staff_a</option><option value="staff_b">staff_b</option>';
+  } else {
+    sel.innerHTML='<option value="">データベースに接続中...</option>';
   }
 }
 loadLoginUsers();
@@ -1737,27 +1744,35 @@ async function doLogin(){
   const user=document.getElementById('login-user').value.trim();
   const pass=document.getElementById('login-pass').value.trim();
   if(!user||!pass)return;
+  const errEl=document.getElementById('login-err');
+  errEl.style.display='none';
+  // Try both carwash schema and public schema
+  let res=null;
+  let lastErr='';
+  // Attempt 1: carwash schema
   try{
-    const res=await sbGet(`app_users?select=*&username=eq.${encodeURIComponent(user)}&password=eq.${encodeURIComponent(pass)}`);
-    if(!res.length){document.getElementById('login-err').style.display='block';return}
-    currentUser=res[0];
-    document.getElementById('login-err').style.display='none';
+    res=await sbGet(`app_users?select=*&username=eq.${encodeURIComponent(user)}&password=eq.${encodeURIComponent(pass)}`);
+  }catch(e){lastErr=e.message;}
+  // Attempt 2: public schema (no schema header)
+  if(!res||!res.length){
+    try{
+      const r=await fetch(SB_URL+'/rest/v1/app_users?select=*&username=eq.'+encodeURIComponent(user)+'&password=eq.'+encodeURIComponent(pass),
+        {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'}});
+      if(r.ok)res=await r.json();
+    }catch(e){lastErr=e.message;}
+  }
+  if(res&&res.length){
+    currentUser={...res[0],default_scan_store_id:res[0].default_scan_store_id||null};
+    errEl.style.display='none';
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
     await bootApp();
-  }catch(e){
-    // fallback for demo
-    const demos={owner:{username:'owner',role:'owner',store_id:null},'staff_a':{username:'staff_a',role:'staff',store_id:'__a'},'staff_b':{username:'staff_b',role:'staff',store_id:'__b'}};
-    if(demos[user]&&pass===user.replace('_','')+'1234'||pass==='owner1234'&&user==='owner'){
-      currentUser=demos[user];
-      document.getElementById('login-err').style.display='none';
-      document.getElementById('login-screen').classList.add('hidden');
-      document.getElementById('app').classList.remove('hidden');
-      await bootApp();
-    } else {
-      document.getElementById('login-err').style.display='block';
-    }
+    return;
   }
+  // Show error with detail for debugging
+  errEl.textContent='ユーザー名またはパスワードが違います';
+  errEl.style.display='block';
+  console.error('Login failed. User:',user,'Error:',lastErr);
 }
 function doLogout(){
   currentUser=null;stores=[];depts=[];allExpenses=[];
