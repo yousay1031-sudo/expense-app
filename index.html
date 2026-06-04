@@ -1129,6 +1129,15 @@ input[type=file]{display:none}
   </div>
 
   <div class="settings-section">
+    <div class="settings-group">AI読み取りキー</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">入力するとDB保存されて全デバイスで共有されます</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="password" class="form-input mono" id="settings-api-key" placeholder="sk-ant-..." style="flex:1" oninput="saveSettingsApiKey()"/>
+      <div id="settings-api-status" style="font-size:12px;font-weight:700;padding:8px 12px;border-radius:10px;background:var(--surface2);color:var(--text2);white-space:nowrap;flex-shrink:0">未設定</div>
+    </div>
+  </div>
+
+  <div class="settings-section">
     <div class="settings-group" style="display:flex;align-items:center;justify-content:space-between">
       <span>データベース接続</span>
       <button onclick="toggleAdvancedSettings()" style="font-size:11px;color:var(--text2);border:none;background:none;cursor:pointer;font-family:inherit" id="advanced-toggle-btn">詳細を表示 ▼</button>
@@ -1857,7 +1866,13 @@ function navTo(name){
   document.getElementById('scroll-area').scrollTop=0;
   if(name==='list')loadExpenses();
   if(name==='analysis'){if(currentUser.role==='owner'){analysisStoreId=stores[0]?.id;renderAnalysisStoreTabs()}else{analysisStoreId=currentUser.store_id}loadAnalysis();}
-  if(name==='settings'){renderDeptSettings();renderStoreSettings();renderCategorySettings();loadArClients().then(()=>renderArClientSettings());if(currentUser.role==='owner'){loadUsers().then(()=>renderUserSettings());loadStoreCards().then(()=>renderCardSettings())}else{document.getElementById('user-settings-section').style.display='none';document.getElementById('store-settings-section').style.display='none';}initCsvExport();initPdfForm();initGasForm();}
+  if(name==='settings'){
+  // Populate API key field
+  const sk=document.getElementById('settings-api-key');
+  const sst=document.getElementById('settings-api-status');
+  if(sk&&API_KEY){sk.value=API_KEY;}
+  if(sst&&API_KEY&&API_KEY.startsWith('sk-ant-')&&API_KEY.length>20){sst.textContent='保存済み ✓';sst.style.cssText='font-size:12px;font-weight:700;padding:8px 12px;border-radius:10px;background:var(--green-l);color:var(--green);white-space:nowrap;flex-shrink:0';}
+  renderDeptSettings();renderStoreSettings();renderCategorySettings();loadArClients().then(()=>renderArClientSettings());if(currentUser.role==='owner'){loadUsers().then(()=>renderUserSettings());loadStoreCards().then(()=>renderCardSettings())}else{document.getElementById('user-settings-section').style.display='none';document.getElementById('store-settings-section').style.display='none';}initCsvExport();initPdfForm();initGasForm();}
   if(name==='daily')initDailyPage();
   if(name==='vehicles'){loadVehicles();}
   if(name==='owner-scan')initOwnerScan();
@@ -2012,6 +2027,31 @@ function renderDashPending(items){
 }
 
 // ===== SCAN =====
+
+
+function saveSettingsApiKey(){
+  const k=document.getElementById('settings-api-key').value.trim();
+  const st=document.getElementById('settings-api-status');
+  if(k.startsWith('sk-ant-')&&k.length>20){
+    API_KEY=k;localStorage.setItem('api_key',k);
+    saveApiKeyToDB(k);
+    // Sync to all key fields
+    ['api-key','api-key-owner'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=k;});
+    if(st){st.textContent='保存済み ✓';st.style.cssText='font-size:12px;font-weight:700;padding:8px 12px;border-radius:10px;background:var(--green-l);color:var(--green);white-space:nowrap;flex-shrink:0';}
+  } else {
+    if(st){st.textContent='未設定';st.style.cssText='font-size:12px;font-weight:700;padding:8px 12px;border-radius:10px;background:var(--surface2);color:var(--text2);white-space:nowrap;flex-shrink:0';}
+  }
+}
+
+async function saveApiKeyToDB(key){
+  try{
+    await sbPatch('app_settings?key=eq.anthropic_api_key',{value:key,updated_at:new Date().toISOString()});
+  }catch(e){
+    // If patch fails try insert
+    try{await sbPost('app_settings',{key:'anthropic_api_key',value:key});}catch(e2){}
+  }
+}
+
 function checkApiKey(){
   const k=document.getElementById('api-key').value.trim();
   const b=document.getElementById('api-status');
@@ -3517,11 +3557,11 @@ function initOwnerScan(){
 
 function syncApiKey(){
   const k=document.getElementById('api-key-owner').value.trim();
-  // Sync to main api-key input
   const mainKey=document.getElementById('api-key');
   if(mainKey)mainKey.value=k;
   API_KEY=k;
   localStorage.setItem('api_key',k);
+  if(k.startsWith('sk-ant-')&&k.length>20)saveApiKeyToDB(k);
   const st=document.getElementById('api-status-owner');
   if(st){
     if(k.startsWith('sk-ant-')&&k.length>20){st.style.cssText='font-size:12px;font-weight:700;padding:8px 12px;border-radius:10px;background:var(--green-l);color:var(--green);white-space:nowrap;flex-shrink:0';st.textContent='設定済み'}
