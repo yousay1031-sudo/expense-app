@@ -1708,18 +1708,11 @@ let fileData=null, fileMime=null, fileBlob=null, docType='receipt', selectedDept
 const now=new Date();
 
 // ===== SUPABASE HELPERS =====
-// public schema tables (no schema header needed)
-const PUBLIC_TABLES=['app_users'];
-function isPublicTable(p){return PUBLIC_TABLES.some(t=>p.startsWith(t))}
-function sbH(write=false,pub=false){
-  const h={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'};
-  if(!pub){h['Accept-Profile']='carwash';if(write)h['Content-Profile']='carwash';}
-  return h;
-}
-async function sbGet(p){const pub=isPublicTable(p);const r=await fetch(SB_URL+'/rest/v1/'+p,{headers:sbH(false,pub)});if(!r.ok)throw new Error(await r.text());return r.json()}
-async function sbPost(p,b){const pub=isPublicTable(p);const r=await fetch(SB_URL+'/rest/v1/'+p,{method:'POST',headers:sbH(true,pub),body:JSON.stringify(b)});if(!r.ok)throw new Error(await r.text());return r.json()}
-async function sbPatch(p,b){const pub=isPublicTable(p);const r=await fetch(SB_URL+'/rest/v1/'+p,{method:'PATCH',headers:sbH(true,pub),body:JSON.stringify(b)});if(!r.ok)throw new Error(await r.text());return r.json()}
-async function sbDelete(p){const pub=isPublicTable(p);const r=await fetch(SB_URL+'/rest/v1/'+p,{method:'DELETE',headers:sbH(false,pub)});if(!r.ok)throw new Error(await r.text())}
+function sbH(){return{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'}}
+async function sbGet(p){const r=await fetch(SB_URL+'/rest/v1/'+p,{headers:sbH()});if(!r.ok)throw new Error(await r.text());return r.json()}
+async function sbPost(p,b){const r=await fetch(SB_URL+'/rest/v1/'+p,{method:'POST',headers:sbH(),body:JSON.stringify(b)});if(!r.ok)throw new Error(await r.text());return r.json()}
+async function sbPatch(p,b){const r=await fetch(SB_URL+'/rest/v1/'+p,{method:'PATCH',headers:sbH(),body:JSON.stringify(b)});if(!r.ok)throw new Error(await r.text());return r.json()}
+async function sbDelete(p){const r=await fetch(SB_URL+'/rest/v1/'+p,{method:'DELETE',headers:sbH()});if(!r.ok)throw new Error(await r.text())}
 
 // ===== LOGIN =====
 document.getElementById('login-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
