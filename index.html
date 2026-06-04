@@ -1709,6 +1709,8 @@ const now=new Date();
 
 // ===== SUPABASE HELPERS =====
 function sbH(){return{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'}}
+function monthEnd(y,m){return new Date(parseInt(y),parseInt(m),0).getDate()} // 月の最終日を返す
+function monthEndStr(y,m){return `${y}-${m}-${String(monthEnd(y,m)).padStart(2,'0')}`}
 async function sbGet(p){const r=await fetch(SB_URL+'/rest/v1/'+p,{headers:sbH()});if(!r.ok)throw new Error(await r.text());return r.json()}
 async function sbPost(p,b){const r=await fetch(SB_URL+'/rest/v1/'+p,{method:'POST',headers:sbH(),body:JSON.stringify(b)});if(!r.ok)throw new Error(await r.text());return r.json()}
 async function sbPatch(p,b){const r=await fetch(SB_URL+'/rest/v1/'+p,{method:'PATCH',headers:sbH(),body:JSON.stringify(b)});if(!r.ok)throw new Error(await r.text());return r.json()}
@@ -1878,7 +1880,7 @@ async function loadDashboard(){
 
   try{
     // Month expenses
-    let q=`expenses?select=*&date=gte.${y}-${m}-01&date=lte.${y}-${m}-31&order=created_at.desc`;
+    let q=`expenses?select=*&date=gte.${y}-${m}-01&date=lte.${monthEndStr(y,m)}&order=created_at.desc`;
     if(currentUser.role==='staff')q+=`&store_id=eq.${currentUser.store_id}`;
     const ex=await sbGet(q);
     allExpenses=ex;
@@ -1904,10 +1906,10 @@ async function loadDashboard(){
     // Monthly sales from daily reports
     let monthSales=0;
     try{
-      let mq=`daily_reports?select=cash_sales,card_sales,app_sales,other_income&date=gte.${y}-${m}-01&date=lte.${y}-${m}-31`;
+      let mq=`daily_reports?select=cash_sales,card_sales,app_sales,other_income&date=gte.${y}-${m}-01&date=lte.${monthEndStr(y,m)}`;
       if(currentUser.role==='staff')mq+=`&store_id=eq.${currentUser.store_id}`;
       const mdr=await sbGet(mq);
-      let arq=`daily_ar_entries?select=amount&date=gte.${y}-${m}-01&date=lte.${y}-${m}-31`;
+      let arq=`daily_ar_entries?select=amount&date=gte.${y}-${m}-01&date=lte.${monthEndStr(y,m)}`;
       if(currentUser.role==='staff')arq+=`&store_id=eq.${currentUser.store_id}`;
       const mar=await sbGet(arq).catch(()=>[]);
       monthSales=mdr.reduce((s,r)=>s+(r.cash_sales||0)+(r.card_sales||0)+(r.app_sales||0)+(r.other_income||0),0)
@@ -2625,15 +2627,15 @@ async function loadAnalysis(){
   if(!month)return;
   const[y,m]=month.split('-');
   try{
-    let q=`expenses?select=*&date=gte.${y}-${m}-01&date=lte.${y}-${m}-31`;
+    let q=`expenses?select=*&date=gte.${y}-${m}-01&date=lte.${monthEndStr(y,m)}`;
     if(analysisStoreId)q+=`&store_id=eq.${analysisStoreId}`;
     const ex=await sbGet(q);
 
-    let drQ=`daily_reports?select=*&date=gte.${y}-${m}-01&date=lte.${y}-${m}-31`;
+    let drQ=`daily_reports?select=*&date=gte.${y}-${m}-01&date=lte.${monthEndStr(y,m)}`;
     if(analysisStoreId)drQ+=`&store_id=eq.${analysisStoreId}`;
     const drs=await sbGet(drQ);
 
-    let arQ=`daily_ar_entries?select=*&date=gte.${y}-${m}-01&date=lte.${y}-${m}-31`;
+    let arQ=`daily_ar_entries?select=*&date=gte.${y}-${m}-01&date=lte.${monthEndStr(y,m)}`;
     if(analysisStoreId)arQ+=`&store_id=eq.${analysisStoreId}`;
     const arEntries=await sbGet(arQ);
 
@@ -2654,10 +2656,10 @@ async function loadAnalysis(){
     const alerts=[];
     const prevY=m==='01'?y-1:y, prevM=m==='01'?'12':String(parseInt(m)-1).padStart(2,'0');
     try{
-      let prevDrQ=`daily_reports?select=*&date=gte.${prevY}-${prevM}-01&date=lte.${prevY}-${prevM}-31`;
+      let prevDrQ=`daily_reports?select=*&date=gte.${prevY}-${prevM}-01&date=lte.${monthEndStr(prevY,prevM)}`;
       if(analysisStoreId)prevDrQ+=`&store_id=eq.${analysisStoreId}`;
       const prevDrs=await sbGet(prevDrQ);
-      let prevArQ=`daily_ar_entries?select=*&date=gte.${prevY}-${prevM}-01&date=lte.${prevY}-${prevM}-31`;
+      let prevArQ=`daily_ar_entries?select=*&date=gte.${prevY}-${prevM}-01&date=lte.${monthEndStr(prevY,prevM)}`;
       if(analysisStoreId)prevArQ+=`&store_id=eq.${analysisStoreId}`;
       const prevAr=await sbGet(prevArQ);
       const prevSales=(prevDrs.reduce((s,r)=>s+(r.cash_sales||0)+(r.card_sales||0)+(r.app_sales||0),0))+(prevAr.reduce((s,e)=>s+(e.amount||0),0));
@@ -2732,7 +2734,7 @@ async function renderStoreSpecific(drs,arEntries,y,m){
   if(store.store_type==='restaurant'){
     titleEl.textContent='飲食店 客数・客単価分析';
     try{
-      const covers=await sbGet(`restaurant_covers?select=*&store_id=eq.${store.id}&date=gte.${y}-${m}-01&date=lte.${y}-${m}-31&order=date`);
+      const covers=await sbGet(`restaurant_covers?select=*&store_id=eq.${store.id}&date=gte.${y}-${m}-01&date=lte.${monthEndStr(y,m)}&order=date`);
       const totalLunch=covers.reduce((s,r)=>s+(r.lunch_covers||0),0);
       const totalDinner=covers.reduce((s,r)=>s+(r.dinner_covers||0),0);
       const totalLunchSales=covers.reduce((s,r)=>s+(r.lunch_sales||0),0);
@@ -2843,8 +2845,8 @@ async function calcBreakeven(){
   if(month&&analysisStoreId){
     const[y,m]=month.split('-');
     try{
-      const drs=await sbGet(`daily_reports?select=cash_sales,card_sales,app_sales&store_id=eq.${analysisStoreId}&date=gte.${y}-${m}-01&date=lte.${y}-${m}-31`);
-      const arE=await sbGet(`daily_ar_entries?select=amount&store_id=eq.${analysisStoreId}&date=gte.${y}-${m}-01&date=lte.${y}-${m}-31`);
+      const drs=await sbGet(`daily_reports?select=cash_sales,card_sales,app_sales&store_id=eq.${analysisStoreId}&date=gte.${y}-${m}-01&date=lte.${monthEndStr(y,m)}`);
+      const arE=await sbGet(`daily_ar_entries?select=amount&store_id=eq.${analysisStoreId}&date=gte.${y}-${m}-01&date=lte.${monthEndStr(y,m)}`);
       actualSales=drs.reduce((s,r)=>s+(r.cash_sales||0)+(r.card_sales||0)+(r.app_sales||0),0)+arE.reduce((s,e)=>s+(e.amount||0),0);
     }catch(e){}
   }
