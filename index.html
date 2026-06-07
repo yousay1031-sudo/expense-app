@@ -1719,6 +1719,14 @@ const now=new Date();
 // ===== SUPABASE HELPERS =====
 function sbH(){return{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'}}
 
+function normalizeAmount(v){
+  if(v===null||v===undefined)return null;
+  if(typeof v==='number')return isNaN(v)?null:v;
+  const s=String(v).replace(/[円¥￥\s]/g,'').replace(/,/g,'');
+  const n=parseFloat(s);
+  return isNaN(n)?null:Math.round(n);
+}
+
 function normalizeDate(d){
   if(!d)return null;
   // Already YYYY-MM-DD
@@ -2335,10 +2343,10 @@ async function saveAllStaffReceipts(){
         doc_type:item.data.type||'receipt',
         vendor_name:item.data.vendor_name||null,
         date:normalizeDate(item.data.date)||null,
-        total:item.data.total||null,
-        tax_8:item.data.tax_8||null,
-        tax_10:item.data.tax_10||null,
-        subtotal:item.data.subtotal||null,
+        total:normalizeAmount(item.data.total),
+        tax_8:normalizeAmount(item.data.tax_8),
+        tax_10:normalizeAmount(item.data.tax_10),
+        subtotal:normalizeAmount(item.data.subtotal),
         payment_method:item.data.payment_method||null,
         memo:item.data.memo||null,
         department_id:deptId,
@@ -4462,10 +4470,10 @@ async function saveAllMultiReceipts(){
         doc_type:item.data.type||'receipt',
         vendor_name:item.data.vendor_name||null,
         date:normalizeDate(item.data.date)||null,
-        total:item.data.total||null,
-        tax_8:item.data.tax_8||null,
-        tax_10:item.data.tax_10||null,
-        subtotal:item.data.subtotal||null,
+        total:normalizeAmount(item.data.total),
+        tax_8:normalizeAmount(item.data.tax_8),
+        tax_10:normalizeAmount(item.data.tax_10),
+        subtotal:normalizeAmount(item.data.subtotal),
         payment_method:item.data.payment_method||null,
         memo:item.data.memo||null,
         category_id:catGuess?.id||null,
