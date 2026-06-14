@@ -1107,6 +1107,10 @@ input[type=file]{display:none}
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
     レジ・日報を撮影して自動入力
   </button>
+  <button id="carwash-autofill-btn" class="btn-secondary" onclick="autoFillDailyFromReservations()" style="display:none;align-items:center;justify-content:center;gap:8px">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    予約システムから売上を自動入力
+  </button>
 </div>
 
 <!-- SETTINGS -->
@@ -1717,6 +1721,44 @@ let fileData=null, fileMime=null, fileBlob=null, docType='receipt', selectedDept
 const now=new Date();
 
 // ===== SUPABASE HELPERS =====
+
+// ===== CARWASH SCHEMA HELPERS =====
+const CARWASH_STORE_MAP = {
+  '75bf10cc-09f6-48a3-94a7-01252bc04ba2': 1, // RIDE ON 帯広店
+  '6b341cb0-972d-4fc8-aefe-d0c1237fbf95': 2, // RIDE ON 札内店
+};
+function cwH(){return{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Accept-Profile':'carwash','Content-Profile':'carwash'}}
+async function cwGet(p){const r=await fetch(SB_URL+'/rest/v1/'+p,{headers:cwH()});if(!r.ok)throw new Error(await r.text());return r.json()}
+
+async function fetchTodayReservations(storeId){
+  const cwId=CARWASH_STORE_MAP[storeId];
+  if(!cwId)return null;
+  const today=new Date().toISOString().split('T')[0];
+  try{
+    const rows=await cwGet(`reservations?select=id,customer_name,car_size,service_name,total_price,payment_method,start_time,status,work_lane&store_id=eq.${cwId}&reservation_date=eq.${today}&order=start_time.asc`);
+    const completed=rows.filter(r=>r.status==='completed'||r.status==='paid');
+    const totalSales=completed.reduce((s,r)=>s+(r.total_price||0),0);
+    const cashSales=completed.filter(r=>r.payment_method==='cash'||r.payment_method==='現金').reduce((s,r)=>s+(r.total_price||0),0);
+    const cardSales=completed.filter(r=>r.payment_method!=='cash'&&r.payment_method!=='現金'&&r.total_price>0).reduce((s,r)=>s+(r.total_price||0),0);
+    return{rows,completed,totalSales,cashSales,cardSales,totalCount:rows.length,completedCount:completed.length};
+  }catch(e){return null;}
+}
+
+async function autoFillDailyFromReservations(){
+  if(!dailyStoreId)return;
+  const cwData=await fetchTodayReservations(dailyStoreId);
+  if(!cwData){showToast('この店舗は予約システムと連携していません');return;}
+  if(!cwData.completedCount){showToast('本日の完了済み予約がまだありません');return;}
+
+  // Fill daily form
+  const cashEl=document.getElementById('d-cash-sales');
+  const cardEl=document.getElementById('d-card-sales');
+  if(cashEl&&cwData.cashSales>0){cashEl.value=cwData.cashSales;}
+  if(cardEl&&cwData.cardSales>0){cardEl.value=cwData.cardSales;}
+  calcDaily();
+  showToast('予約データから売上を自動入力しました（'+cwData.completedCount+'件）✓','success');
+}
+
 function sbH(){return{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'}}
 
 function normalizeAmount(v){
@@ -1725,6 +1767,16 @@ function normalizeAmount(v){
   const s=String(v).replace(/[円¥￥\s]/g,'').replace(/,/g,'');
   const n=parseFloat(s);
   return isNaN(n)?null:Math.round(n);
+}
+
+function normalizePaymentMethod(v){
+  if(!v)return null;
+  const s=String(v).toLowerCase().trim();
+  if(/^cash$|現金/.test(s))return 'cash';
+  if(/^card$|カード|クレジット|credit/.test(s))return 'card';
+  if(/^app$|アプリ|paypay|linepay|メルペイ|楽天/.test(s))return 'app';
+  if(/^unknown$|不明/.test(s))return null;
+  return v; // keep original if no match
 }
 
 function normalizeDate(d){
@@ -1983,11 +2035,58 @@ async function loadDashboard(){
     renderDashTodo(todaySales, pending, ex.length);
     renderMiniChart(ex);
     if(pending>0)renderDashPending(ex.filter(e=>e.status==='pending').slice(0,4));
+    // Load carwash reservations for carwash stores
+    loadDashCarwash();
   }catch(e){
     document.getElementById('ds-total').textContent='—';
     if(document.getElementById('ds-today-sales'))document.getElementById('ds-today-sales').textContent='—';
     renderDashTodo(0,0,0);
   }
+}
+
+
+async function loadDashCarwash(){
+  // Only show for owner or carwash store staff
+  const carwashStores=stores.filter(s=>CARWASH_STORE_MAP[s.id]);
+  if(!carwashStores.length)return;
+
+  const targetStores=currentUser.role==='owner'
+    ?carwashStores
+    :carwashStores.filter(s=>s.id===currentUser.store_id);
+  if(!targetStores.length)return;
+
+  const card=document.getElementById('dash-carwash-card');
+  const content=document.getElementById('dash-carwash-content');
+  if(!card||!content)return;
+  card.style.display='block';
+  content.innerHTML='<div style="font-size:13px;color:var(--text2)">読み込み中...</div>';
+
+  const results=await Promise.all(targetStores.map(async s=>{
+    const data=await fetchTodayReservations(s.id);
+    return{store:s,data};
+  }));
+
+  content.innerHTML=results.map(({store,data})=>{
+    if(!data)return'';
+    const pct=data.totalCount>0?Math.round(data.completedCount/data.totalCount*100):0;
+    // Next upcoming reservation
+    const now=new Date();
+    const nowTime=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    const next=data.rows.filter(r=>r.status!=='completed'&&r.status!=='cancelled'&&r.start_time>nowTime)[0];
+    return`<div style="padding:10px 0;border-bottom:0.5px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:14px;font-weight:700">${store.icon||'🚿'}${store.name}</div>
+        <div style="font-size:16px;font-weight:700;color:var(--green)">¥${data.totalSales.toLocaleString()}</div>
+      </div>
+      <div style="display:flex;gap:12px;font-size:12px;color:var(--text2);margin-bottom:6px">
+        <div>予約 <b style="color:var(--text)">${data.totalCount}件</b></div>
+        <div>完了 <b style="color:var(--green)">${data.completedCount}件</b></div>
+        <div>現金 <b style="color:var(--text)">¥${data.cashSales.toLocaleString()}</b></div>
+        <div>カード <b style="color:var(--text)">¥${data.cardSales.toLocaleString()}</b></div>
+      </div>
+      ${next?`<div style="font-size:12px;background:var(--blue-l);color:var(--blue);padding:6px 10px;border-radius:8px">⏰ 次の予約 ${next.start_time?.slice(0,5)} ${next.customer_name} (${next.service_name||''})</div>`:'<div style="font-size:12px;color:var(--text3)">本日の残り予約なし</div>'}
+    </div>`;
+  }).join('');
 }
 
 function renderDashTodo(todaySales, pending, expCount){
@@ -2347,7 +2446,7 @@ async function saveAllStaffReceipts(){
         tax_8:normalizeAmount(item.data.tax_8),
         tax_10:normalizeAmount(item.data.tax_10),
         subtotal:normalizeAmount(item.data.subtotal),
-        payment_method:item.data.payment_method||null,
+        payment_method:normalizePaymentMethod(item.data.payment_method),
         memo:item.data.memo||null,
         department_id:deptId,
         category_id:catGuess?.id||null,
@@ -4474,7 +4573,7 @@ async function saveAllMultiReceipts(){
         tax_8:normalizeAmount(item.data.tax_8),
         tax_10:normalizeAmount(item.data.tax_10),
         subtotal:normalizeAmount(item.data.subtotal),
-        payment_method:item.data.payment_method||null,
+        payment_method:normalizePaymentMethod(item.data.payment_method),
         memo:item.data.memo||null,
         category_id:catGuess?.id||null,
         status:'pending',
