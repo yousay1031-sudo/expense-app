@@ -1744,6 +1744,34 @@ async function fetchTodayReservations(storeId){
   }catch(e){return null;}
 }
 
+
+async function autoFillDailyFromReservationsSilent(){
+  const cwData=await fetchTodayReservations(dailyStoreId);
+  if(!cwData||!cwData.completedCount)return;
+  if(cwData.cashSales>0){
+    const el=document.getElementById('d-cash-sales');
+    if(el&&!parseInt(el.value))el.value=cwData.cashSales;
+  }
+  if(cwData.cardSales>0){
+    const el=document.getElementById('d-card-sales');
+    if(el&&!parseInt(el.value))el.value=cwData.cardSales;
+  }
+  // Show subtle indicator
+  const indicator=document.getElementById('carwash-autofill-indicator');
+  if(!indicator){
+    const btn=document.getElementById('carwash-autofill-btn');
+    if(btn){
+      const div=document.createElement('div');
+      div.id='carwash-autofill-indicator';
+      div.style.cssText='font-size:12px;color:var(--green);margin-bottom:8px;text-align:center';
+      div.textContent='🚿 予約システムから売上を自動入力しました（'+cwData.completedCount+'件完了）';
+      btn.parentNode.insertBefore(div,btn);
+    }
+  } else {
+    indicator.textContent='🚿 予約システムから売上を自動入力しました（'+cwData.completedCount+'件完了）';
+  }
+}
+
 async function autoFillDailyFromReservations(){
   if(!dailyStoreId)return;
   const cwData=await fetchTodayReservations(dailyStoreId);
@@ -3245,6 +3273,11 @@ async function loadDaily(){
     } else {
       ['d-cash-sales','d-card-sales','d-app-sales','d-other-income','d-card-expenses','d-other-expenses','d-cash-expenses'].forEach(id=>document.getElementById(id).value='');
       document.getElementById('d-memo').value='';
+      // Auto-fill from carwash reservation system if today and carwash store
+      const today=new Date().toISOString().split('T')[0];
+      if(date===today && CARWASH_STORE_MAP[dailyStoreId]){
+        await autoFillDailyFromReservationsSilent();
+      }
     }
   }catch(e){}
 
