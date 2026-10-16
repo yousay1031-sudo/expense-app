@@ -2004,23 +2004,26 @@ function renderHeaderBadge(){
 function setupUI(){
   const scanBtn=document.getElementById('bn-scan');
   const scanPage=document.getElementById('page-scan');
+  const ownerScanBtn=document.getElementById('bn-owner-scan');
   const vehicleBtn=document.getElementById('bn-vehicles');
   const vehiclePage=document.getElementById('page-vehicles');
+  const cardSettings=document.getElementById('card-settings-section');
 
   if(currentUser.role==='owner'){
     // オーナー: スタッフスキャン非表示 → オーナースキャン表示
     scanBtn.style.display='none';
     scanPage.style.display='none';
-    const ownerScanBtn=document.getElementById('bn-owner-scan');
     if(ownerScanBtn)ownerScanBtn.style.display='';
     document.getElementById('analysis-sub').textContent='全店舗の経費を一括確認';
     vehicleBtn.style.display='';
     vehiclePage.style.display='';
-    // Show card settings
-    const cs=document.getElementById('card-settings-section');
-    if(cs)cs.style.display='block';
+    if(cardSettings)cardSettings.style.display='block';
   } else {
+    // スタッフ: スタッフスキャン表示 → オーナースキャン非表示
     scanBtn.style.display='';
+    scanPage.style.display='';
+    if(ownerScanBtn)ownerScanBtn.style.display='none';
+    if(cardSettings)cardSettings.style.display='none';
     document.getElementById('analysis-sub').textContent='この店舗の月次経費';
     // 車両ボタン: 担当店舗が car タイプのときだけ表示
     const myStore=stores.find(s=>s.id===currentUser.store_id);
