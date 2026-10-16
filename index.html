@@ -2598,9 +2598,8 @@ async function saveAllStaffReceipts(){
         if(upRes.ok){imagePath=path;imageUrl=SB_URL+'/storage/v1/object/public/'+path;}
       }catch(e){} // 画像アップロード失敗でも経費登録は続ける
 
-      const storeDepts=depts.filter(d=>d.store_id===currentUser.store_id||!d.store_id);
-      const deptGuess=guessDept(item.data,storeDepts);
-      const deptId=deptGuess[0]?.dept?.id||null;
+      const storeDepts=depts.filter(d=>d.store_id===currentUser.store_id);
+      const deptId=autoDeptId(item.data,storeDepts);
       const catGuess=await guessCategoryAI(item.data.vendor_name);
       if(item.data.vendor_name)learnVendorDocType(item.data.vendor_name,item.data.type||'receipt');
 
@@ -2728,9 +2727,9 @@ async function runScan(){
     uploadedPath=path;setPS('up','done',null,((Date.now()-t2)/1000).toFixed(1)+'s');
   }catch(e){setPS('up','fail','バケット未作成の可能性');uploadedPath=null}
   setPS('db','doing');const t3=Date.now();
-  const storeDepts=depts.filter(d=>d.store_id===currentUser.store_id||!d.store_id);
+  const storeDepts=depts.filter(d=>d.store_id===currentUser.store_id);
   const deptGuess=guessDept(parsed,storeDepts);
-  selectedDeptId=deptGuess[0]?.dept?.id||null;
+  selectedDeptId=(deptGuess[0]&&deptGuess[0].score>0)?deptGuess[0].dept.id:null;
   const imageUrl=uploadedPath?SB_URL+'/storage/v1/object/public/'+uploadedPath:null;
   let savedId=null;
   try{
@@ -2753,10 +2752,16 @@ async function runScan(){
 }
 
 function guessDept(p,targetDepts){
-  const text=[p.vendor?.name,p.memo,...(p.items||[]).map(i=>i.name)].filter(Boolean).join(' ');
-  const scores=targetDepts.map(d=>{let s=0;(d.keywords||[]).forEach(kw=>{if(text.includes(kw))s+=0.35});return{dept:d,score:Math.min(s,.97)}}).sort((a,b)=>b.score-a.score);
-  if(scores.length&&scores[0].score===0)scores[0].score=0.3;
+  const text=[p.vendor?.name,p.vendor_name,p.memo,...(p.items||[]).map(i=>i.name)].filter(Boolean).join(' ');
+  const scores=targetDepts.map(d=>{let s=0;(d.keywords||[]).forEach(kw=>{if(kw&&text.includes(kw))s+=0.35});return{dept:d,score:Math.min(s,.97)}}).sort((a,b)=>b.score-a.score);
+  // キーワード一致が無い場合は自動で部門を付けない（誤判定防止）
+  // 画面表示用に候補は返すが、score 0 のものは呼び出し側で未設定扱いにする
   return scores.slice(0,3);
+}
+// キーワード一致した部門だけを返す（自動付与用）。無ければ null
+function autoDeptId(p,targetDepts){
+  const g=guessDept(p,targetDepts);
+  return (g[0]&&g[0].score>0)?g[0].dept.id:null;
 }
 function cc(v){return v>=0.85?'ct-h':v>=0.6?'ct-m':'ct-l'}
 function fa(v){return v!=null?'¥'+Number(v).toLocaleString():'—'}
@@ -3002,8 +3007,8 @@ async function saveBulkEntry(){
     btn.textContent='登録中... ('+(i+1)+'/'+items.length+')';
     try{
       const catGuess=await guessCategoryAI(item.vendor);
-      const storeDepts=depts.filter(d=>d.store_id===storeId||!d.store_id);
-      const deptGuess=guessDept({vendor_name:item.vendor,memo:null,items:null},storeDepts);
+      const storeDepts=depts.filter(d=>d.store_id===storeId);
+      const deptId=autoDeptId({vendor_name:item.vendor},storeDepts);
       await sbPost('expenses',{
         store_id:storeId,
         doc_type:'receipt',
@@ -3011,7 +3016,7 @@ async function saveBulkEntry(){
         date:normalizeDate(item.date)||item.date||null,
         total:item.amount,
         payment_method:'現金',
-        department_id:deptGuess[0]?.dept?.id||null,
+        department_id:deptId,
         category_id:catGuess?.id||null,
         status:'pending',
         memo:'手入力',
@@ -3035,7 +3040,7 @@ function openExpenseModal(id){
   editingExpenseId=id;
   document.getElementById('em-title').textContent=e.vendor_name||'経費詳細';
   document.getElementById('em-sub').textContent=e.date||'日付不明';
-  const storeDepts=depts.filter(d=>!d.store_id||d.store_id===e.store_id);
+  const storeDepts=depts.filter(d=>d.store_id===e.store_id);
   const deptOpts=storeDepts.map(d=>'<option value="'+d.id+'" '+(d.id===e.department_id?'selected':'')+'>'+d.name+'</option>').join('')+'<option value="">未設定</option>';
   const catOpts=expenseCategories.map(c=>'<option value="'+c.id+'" '+(c.id===e.category_id?'selected':'')+'>'+c.name+'</option>').join('')+'<option value="">未設定</option>';
   const storeVehicles=vehicles.filter(v=>v.store_id===(e.store_id||currentUser.store_id));
