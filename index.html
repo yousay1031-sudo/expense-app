@@ -376,27 +376,100 @@ input[type=file]{display:none}
 </div>
 <div class="scroll-area" id="scroll-area">
 
-<!-- DASHBOARD (staff) -->
+<!-- DASHBOARD -->
 <div class="page active" id="page-dashboard">
-  <div class="page-title" id="dash-title">ダッシュボード</div>
-  <div class="page-sub" id="dash-sub">読み込んでいます...</div>
-  <div class="stat-row">
-    <div class="stat-card"><div class="stat-label">今月の経費合計</div><div class="stat-value" style="color:var(--blue);font-size:20px" id="ds-total">—</div></div>
-    <div class="stat-card"><div class="stat-label">確認待ち</div><div class="stat-value" style="color:var(--amber);font-size:20px" id="ds-pending">—</div></div>
+  <!-- Greeting -->
+  <div style="padding:4px 0 16px">
+    <div style="font-size:22px;font-weight:700" id="dash-title">こんにちは 👋</div>
+    <div style="font-size:13px;color:var(--text2);margin-top:2px" id="dash-sub">読み込んでいます...</div>
   </div>
-  <div class="stat-row">
-    <div class="stat-card"><div class="stat-label">今月の件数</div><div class="stat-value" style="color:var(--green);font-size:20px" id="ds-count">—</div></div>
-    <div class="stat-card"><div class="stat-label">AI精度</div><div class="stat-value" style="color:var(--purple);font-size:20px" id="ds-acc">—</div></div>
+
+  <!-- TODAY'S ACTION LIST -->
+  <div class="card" style="margin-bottom:14px;border-left:3px solid var(--blue)">
+    <div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:10px">📋 今日やること</div>
+    <div id="dash-todo-list"></div>
   </div>
-  <div class="card">
-    <div class="card-title">月別推移</div>
+
+  <!-- TODAY SUMMARY -->
+  <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:8px">今日の状況</div>
+  <div class="stat-row" style="margin-bottom:14px">
+    <div class="stat-card" style="background:var(--green-l);cursor:pointer" onclick="navTo('daily')">
+      <div class="stat-label">今日の売上</div>
+      <div class="stat-value" style="color:var(--green);font-size:20px" id="ds-today-sales">—</div>
+      <div style="font-size:11px;color:var(--green);margin-top:2px">タップして入力 →</div>
+    </div>
+    <div class="stat-card" style="cursor:pointer" onclick="navTo('list')">
+      <div class="stat-label">確認待ちの経費</div>
+      <div class="stat-value" style="color:var(--amber);font-size:20px" id="ds-pending">—</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">タップして確認 →</div>
+    </div>
+  </div>
+
+  <!-- MONTH SUMMARY -->
+  <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:8px">今月の合計</div>
+  <div class="stat-row" style="margin-bottom:14px">
+    <div class="stat-card">
+      <div class="stat-label">売上合計</div>
+      <div class="stat-value" style="color:var(--blue);font-size:18px" id="ds-month-sales">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">経費合計</div>
+      <div class="stat-value" style="color:var(--red);font-size:18px" id="ds-total">—</div>
+    </div>
+  </div>
+  <div class="stat-row" style="margin-bottom:14px">
+    <div class="stat-card">
+      <div class="stat-label">手元に残る（利益）</div>
+      <div class="stat-value" style="font-size:18px" id="ds-profit">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">登録件数</div>
+      <div class="stat-value" style="color:var(--text2);font-size:18px" id="ds-count">—</div>
+    </div>
+  </div>
+
+  <!-- TREND CHART -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title">過去6ヶ月の売上推移</div>
     <div class="mini-chart" id="mini-chart"></div>
     <div id="mini-labels" style="display:flex;gap:6px;margin-top:5px;justify-content:space-around"></div>
   </div>
-  <div class="card">
-    <div class="card-title">最近の承認待ち <button class="card-action" onclick="navTo('list')">すべて見る →</button></div>
+
+  <!-- CARWASH TODAY RESERVATIONS -->
+  <div class="card" id="dash-carwash-card" style="display:none;margin-bottom:14px">
+    <div class="card-title">今日の予約状況 <button class="card-action" onclick="loadDashCarwash()">更新</button></div>
+    <div id="dash-carwash-content"></div>
+  </div>
+
+  <!-- PENDING LIST -->
+  <div class="card" id="dash-pending-card" style="display:none">
+    <div class="card-title">確認待ちの経費 <button class="card-action" onclick="navTo('list')">すべて見る →</button></div>
     <div id="dash-pending"></div>
   </div>
+
+  <!-- QUICK ACTIONS -->
+  <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:8px">よく使う操作</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
+    <button onclick="navTo('scan')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;font-family:inherit">
+      <span style="font-size:24px">📷</span>
+      <span style="font-size:13px;font-weight:700">領収書を撮影</span>
+    </button>
+    <button onclick="navTo('daily')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;font-family:inherit">
+      <span style="font-size:24px">💰</span>
+      <span style="font-size:13px;font-weight:700">今日の売上を入力</span>
+    </button>
+    <button onclick="navTo('list')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;font-family:inherit">
+      <span style="font-size:24px">📋</span>
+      <span style="font-size:13px;font-weight:700">経費を確認する</span>
+    </button>
+    <button onclick="navTo('analysis')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;font-family:inherit">
+      <span style="font-size:24px">📊</span>
+      <span style="font-size:13px;font-weight:700">売上レポートを見る</span>
+    </button>
+  </div>
+
+  <!-- hidden for compat -->
+  <div style="display:none" id="ds-acc"></div>
 </div>
 
 <!-- SCAN -->
@@ -1991,7 +2064,7 @@ async function loadDashboard(){
   const store=stores.find(s=>s.id===currentUser.store_id);
   const storeName=store?store.name:'';
   const hour=now.getHours();
-  const greeting=hour<11?'おはようございます':'hour'<17?'こんにちは':'おつかれさまです';
+  const greeting=hour<11?'おはようございます':hour<17?'こんにちは':'おつかれさまです';
 
   document.getElementById('dash-title').textContent=
     currentUser.role==='owner'?greeting+' オーナー':greeting+(storeName?' '+storeName:'');
@@ -3024,7 +3097,7 @@ async function saveFixedCosts(){
     const existing=await sbGet(`fixed_costs?select=id&store_id=eq.${analysisStoreId}`);
     if(existing.length)await sbPatch(`fixed_costs?store_id=eq.${analysisStoreId}`,payload);
     else await sbPost('fixed_costs',payload);
-    showToast('固定費を保存するしました ✓');calcBreakeven();
+    showToast('固定費を保存しました ✓','success');calcBreakeven();
   }catch(e){showToast('エラー: '+e.message,'error')}
 }
 
@@ -3183,7 +3256,7 @@ async function copyYesterday(){
   if(!currentDate)return;
 
   // Check current fields have data - warn before overwrite
-  const hasData=['d-cash-sales','d-card-sales','d-app-sales'].some(id=>parseInt(document.getElementById(id)?.value)||0>0);
+  const hasData=['d-cash-sales','d-card-sales','d-app-sales'].some(id=>(parseInt(document.getElementById(id)?.value)||0)>0);
   if(hasData && !confirm('今日の入力内容を前の日のデータで上書きしますか？')){return;}
 
   btn.textContent='読み込み中...';btn.disabled=true;
