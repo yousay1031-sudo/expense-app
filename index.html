@@ -105,6 +105,10 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 .card-action{font-size:13px;color:var(--blue);cursor:pointer;font-weight:400;border:none;background:none;font-family:inherit}
 .stat-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .stat-card{background:var(--surface2);border-radius:var(--r);padding:14px}
+.home-tile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px 12px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;font-family:inherit}
+.home-tile:active{background:var(--surface2)}
+.home-tile-ico{font-size:26px;line-height:1}
+.home-tile-label{font-size:13px;font-weight:700;color:var(--text)}
 .stat-label{font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500}
 .stat-value{font-size:21px;font-weight:700;line-height:1.2}
 .stat-delta{font-size:11px;color:var(--text3);margin-top:3px}
@@ -447,24 +451,33 @@ input[type=file]{display:none}
     <div id="dash-pending"></div>
   </div>
 
-  <!-- QUICK ACTIONS -->
-  <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:8px">よく使う操作</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
-    <button onclick="navTo('scan')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;font-family:inherit">
-      <span style="font-size:24px">📷</span>
-      <span style="font-size:13px;font-weight:700">領収書を撮影</span>
+  <!-- MENU (all features accessible from home) -->
+  <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:8px">メニュー</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px" id="home-menu">
+    <button onclick="navTo('daily')" class="home-tile">
+      <span class="home-tile-ico">💰</span>
+      <span class="home-tile-label">今日の売上を入力</span>
     </button>
-    <button onclick="navTo('daily')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;font-family:inherit">
-      <span style="font-size:24px">💰</span>
-      <span style="font-size:13px;font-weight:700">今日の売上を入力</span>
+    <button onclick="navTo('list')" class="home-tile" style="position:relative">
+      <span class="home-tile-ico">📋</span>
+      <span class="home-tile-label">経費一覧</span>
+      <span id="home-pending-badge" style="display:none;position:absolute;top:10px;right:10px;background:var(--red);color:#fff;font-size:11px;font-weight:700;min-width:20px;height:20px;border-radius:10px;padding:0 6px;align-items:center;justify-content:center">0</span>
     </button>
-    <button onclick="navTo('list')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;font-family:inherit">
-      <span style="font-size:24px">📋</span>
-      <span style="font-size:13px;font-weight:700">経費を確認する</span>
+    <button onclick="goBulkEntry()" class="home-tile">
+      <span class="home-tile-ico">✏️</span>
+      <span class="home-tile-label">経費を手入力</span>
     </button>
-    <button onclick="navTo('analysis')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--surface);cursor:pointer;font-family:inherit">
-      <span style="font-size:24px">📊</span>
-      <span style="font-size:13px;font-weight:700">売上レポートを見る</span>
+    <button onclick="navTo('analysis')" class="home-tile">
+      <span class="home-tile-ico">📊</span>
+      <span class="home-tile-label">売上レポート</span>
+    </button>
+    <button onclick="navTo('vehicles')" class="home-tile" id="home-tile-vehicles" style="display:none">
+      <span class="home-tile-ico">🚗</span>
+      <span class="home-tile-label">車両管理</span>
+    </button>
+    <button onclick="navTo('settings')" class="home-tile">
+      <span class="home-tile-ico">⚙️</span>
+      <span class="home-tile-label">設定</span>
     </button>
   </div>
 
@@ -1450,11 +1463,6 @@ input[type=file]{display:none}
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
     <span class="bn-label">ホーム</span>
   </button>
-  <button class="bn-item" id="bn-list" onclick="navTo('list')">
-    <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-    <span class="bn-label">経費一覧</span>
-    <span class="bn-badge" id="nb-list" style="display:none">0</span>
-  </button>
   <button class="bn-cam" id="bn-scan" onclick="navTo('scan')">
     <div class="bn-cam-circle"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
     <span class="bn-label" style="margin-top:2px">撮影</span>
@@ -1463,22 +1471,19 @@ input[type=file]{display:none}
     <div class="bn-cam-circle" style="background:var(--purple)"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
     <span class="bn-label" style="margin-top:2px">撮影</span>
   </button>
-  <button class="bn-item" id="bn-analysis" onclick="navTo('analysis')">
-    <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-    <span class="bn-label">レポート</span>
+  <button class="bn-item" id="bn-bulk" onclick="goBulkEntry()">
+    <svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+    <span class="bn-label">手入力</span>
   </button>
-  <button class="bn-item" id="bn-daily" onclick="navTo('daily')">
-    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
-    <span class="bn-label">今日の売上</span>
+  <!-- hidden nav buttons kept so navTo active-state code stays null-safe; accessed from home -->
+  <button class="bn-item" id="bn-list" onclick="navTo('list')" style="display:none">
+    <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+    <span class="bn-badge" id="nb-list" style="display:none">0</span>
   </button>
-  <button class="bn-item" id="bn-vehicles" onclick="navTo('vehicles')">
-    <svg viewBox="0 0 24 24"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v9a2 2 0 01-2 2h-2"/><circle cx="9" cy="21" r="2"/><circle cx="19" cy="21" r="2"/><path d="M3 9h18"/></svg>
-    <span class="bn-label">車両管理</span>
-  </button>
-  <button class="bn-item" id="bn-settings" onclick="navTo('settings')">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-    <span class="bn-label">設定</span>
-  </button>
+  <button class="bn-item" id="bn-analysis" onclick="navTo('analysis')" style="display:none"></button>
+  <button class="bn-item" id="bn-daily" onclick="navTo('daily')" style="display:none"></button>
+  <button class="bn-item" id="bn-vehicles" onclick="navTo('vehicles')" style="display:none"></button>
+  <button class="bn-item" id="bn-settings" onclick="navTo('settings')" style="display:none"></button>
 </div>
 </div><!-- /app -->
 
@@ -2054,14 +2059,15 @@ function setupUI(){
   const vehiclePage=document.getElementById('page-vehicles');
   const cardSettings=document.getElementById('card-settings-section');
 
+  const homeVehicleTile=document.getElementById('home-tile-vehicles');
   if(currentUser.role==='owner'){
     // オーナー: スタッフスキャン非表示 → オーナースキャン表示
     scanBtn.style.display='none';
     scanPage.style.display='none';
     if(ownerScanBtn)ownerScanBtn.style.display='';
     document.getElementById('analysis-sub').textContent='全店舗の経費を一括確認';
-    vehicleBtn.style.display='';
     vehiclePage.style.display='';
+    if(homeVehicleTile)homeVehicleTile.style.display='flex';
     if(cardSettings)cardSettings.style.display='block';
   } else {
     // スタッフ: スタッフスキャン表示 → オーナースキャン非表示
@@ -2070,11 +2076,11 @@ function setupUI(){
     if(ownerScanBtn)ownerScanBtn.style.display='none';
     if(cardSettings)cardSettings.style.display='none';
     document.getElementById('analysis-sub').textContent='この店舗の月次経費';
-    // 車両ボタン: 担当店舗が car タイプのときだけ表示
+    // 車両: 担当店舗が car タイプのときだけ表示
     const myStore=stores.find(s=>s.id===currentUser.store_id);
     const showVehicle=myStore?.store_type==='car';
-    vehicleBtn.style.display=showVehicle?'':'none';
     vehiclePage.style.display=showVehicle?'':'none';
+    if(homeVehicleTile)homeVehicleTile.style.display=showVehicle?'flex':'none';
   }
 
   // dept store selector default
@@ -2173,9 +2179,11 @@ async function loadDashboard(){
     document.getElementById('learn-count').textContent=ex.length;
     document.getElementById('learn-acc').textContent=(ex.length?Math.round(withDept/ex.length*100):0)+'%';
 
-    // Pending badge
+    // Pending badge (nav kept for compat + home tile badge)
     if(pending>0){const nb=document.getElementById('nb-list');if(nb){nb.textContent=pending;nb.style.display='flex';}}
     else{const nb=document.getElementById('nb-list');if(nb)nb.style.display='none';}
+    const hpb=document.getElementById('home-pending-badge');
+    if(hpb){if(pending>0){hpb.textContent=pending;hpb.style.display='flex';}else{hpb.style.display='none';}}
 
     // Show pending card only if there are pending items
     const pendingCard=document.getElementById('dash-pending-card');
@@ -2903,6 +2911,16 @@ async function deleteExpense(id){
 }
 // ===== BULK MANUAL ENTRY =====
 let bulkRowSeq=0;
+async function goBulkEntry(){
+  // Ensure we're on the list page and expenses loaded (for vendor candidates)
+  if(!document.getElementById('page-list').classList.contains('active')){
+    navTo('list');
+  }
+  if(!allExpenses||!allExpenses.length){
+    try{await loadExpenses();}catch(e){}
+  }
+  openBulkEntry();
+}
 function openBulkEntry(){
   bulkRowSeq=0;
   document.getElementById('bulk-rows').innerHTML='';
