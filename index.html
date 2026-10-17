@@ -744,6 +744,10 @@ input[type=file]{display:none}
     <button class="filter-btn" onclick="filterList(this,'approved')">確認済み</button>
     <button class="filter-btn" onclick="filterList(this,'check')">再確認</button>
   </div>
+  <div id="list-biz-filter" style="display:none;gap:8px;margin-bottom:8px">
+    <select class="search-input" id="list-business" style="margin-bottom:0;flex:1;cursor:pointer" onchange="onListBusinessChange()"></select>
+    <select class="search-input" id="list-store" style="margin-bottom:0;flex:1;cursor:pointer" onchange="applyFilters()"></select>
+  </div>
   <div style="display:flex;gap:8px;margin-bottom:12px">
     <select class="search-input" id="list-month" style="margin-bottom:0;flex-shrink:0;width:auto;min-width:120px;cursor:pointer" onchange="applyFilters()"></select>
     <input type="search" class="search-input" id="list-search" placeholder="取引先・摘要で検索..." style="margin-bottom:0;flex:1" oninput="applyFilters()"/>
@@ -756,6 +760,10 @@ input[type=file]{display:none}
   <div class="page-title">売上レポート</div>
   <div class="page-sub" id="analysis-sub">全店舗の経営状況を一括確認</div>
 
+  <!-- business tabs (owner) -->
+  <div id="analysis-biz-tabs" style="display:none;overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:8px">
+    <div style="display:flex;gap:8px;padding-bottom:2px" id="analysis-biz-btn-wrap"></div>
+  </div>
   <!-- store tabs (owner) -->
   <div id="analysis-store-tabs" style="display:none;overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:14px">
     <div style="display:flex;gap:8px;padding-bottom:2px" id="analysis-store-btn-wrap"></div>
@@ -1854,7 +1862,7 @@ let appUsers=[];
 let arClients=[];
 let expenseCategories=[];
 let arEntriesTemp=[];
-let analysisStoreId=null;
+let analysisStoreId=null, analysisBizId='all';
 let currentAnalysisTab='overview';
 let editingArClientId=null;
 let fileData=null, fileMime=null, fileBlob=null, docType='receipt', selectedDeptId=null, selectedCategoryId=null;
@@ -2132,7 +2140,7 @@ function navTo(name){
   if(bn)bn.classList.add('active');
   document.getElementById('scroll-area').scrollTop=0;
   if(name==='list')loadExpenses();
-  if(name==='analysis'){if(currentUser.role==='owner'){analysisStoreId=stores[0]?.id;renderAnalysisStoreTabs()}else{analysisStoreId=currentUser.store_id}loadAnalysis();}
+  if(name==='analysis'){if(currentUser.role==='owner'){analysisBizId='all';renderAnalysisBizTabs();const first=analysisStoreList()[0];analysisStoreId=first?.id||null;renderAnalysisStoreTabs()}else{analysisStoreId=currentUser.store_id}loadAnalysis();}
   if(name==='settings'){
   // Populate API key field
   const sk=document.getElementById('settings-api-key');
@@ -2888,6 +2896,7 @@ async function loadExpenses(){
     if(currentUser.role==='staff')q+=`&store_id=eq.${currentUser.store_id}`;
     allExpenses=await sbGet(q);
     buildMonthFilter();
+    buildListBizFilter();
     applyFilters();
   }catch(e){document.getElementById('expense-list').innerHTML='<div style="text-align:center;padding:32px;color:var(--text2)">データ取得エラー</div>'}
 }
@@ -2909,11 +2918,41 @@ function buildMonthFilter(){
   else if(months.includes(curMonth))sel.value=curMonth;
   else sel.value='all';
 }
+function buildListBizFilter(){
+  // owner only; needs at least one business to be worth showing
+  const wrap=document.getElementById('list-biz-filter');
+  if(!wrap)return;
+  if(currentUser.role!=='owner'||!businesses.length){wrap.style.display='none';return}
+  wrap.style.display='flex';
+  const bizSel=document.getElementById('list-business');
+  const prevBiz=bizSel.value;
+  bizSel.innerHTML='<option value="all">すべての事業</option>'+businesses.map(b=>`<option value="${b.id}">${b.icon||'🏢'} ${b.name}</option>`).join('');
+  if(prevBiz&&(prevBiz==='all'||businesses.find(b=>b.id===prevBiz)))bizSel.value=prevBiz;
+  buildListStoreFilter();
+}
+function buildListStoreFilter(){
+  const bizSel=document.getElementById('list-business');
+  const storeSel=document.getElementById('list-store');
+  if(!storeSel)return;
+  const bizId=bizSel?.value||'all';
+  const prevStore=storeSel.value;
+  const targetStores=bizId==='all'?stores:stores.filter(s=>s.business_id===bizId);
+  storeSel.innerHTML='<option value="all">すべての店舗</option>'+targetStores.map(s=>`<option value="${s.id}">${s.icon||''}${s.name}</option>`).join('');
+  if(prevStore&&(prevStore==='all'||targetStores.find(s=>s.id===prevStore)))storeSel.value=prevStore;
+  else storeSel.value='all';
+}
+function onListBusinessChange(){buildListStoreFilter();applyFilters()}
 function filterList(btn,status){document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentFilter=status;applyFilters()}
 function applyFilters(){
   const search=document.getElementById('list-search')?.value?.toLowerCase()||'';
   const month=document.getElementById('list-month')?.value||'all';
+  const bizId=document.getElementById('list-business')?.value||'all';
+  const storeId=document.getElementById('list-store')?.value||'all';
   let filtered=allExpenses;
+  if(currentUser.role==='owner'){
+    if(storeId!=='all')filtered=filtered.filter(e=>e.store_id===storeId);
+    else if(bizId!=='all'){const ids=stores.filter(s=>s.business_id===bizId).map(s=>s.id);filtered=filtered.filter(e=>ids.includes(e.store_id))}
+  }
   if(month!=='all')filtered=filtered.filter(e=>e.date&&e.date.startsWith(month));
   if(currentFilter!=='all')filtered=filtered.filter(e=>e.status===currentFilter);
   if(search)filtered=filtered.filter(e=>(e.vendor_name||'').toLowerCase().includes(search)||(e.memo||'').toLowerCase().includes(search));
@@ -3110,13 +3149,25 @@ async function saveExpenseEdit(){
 }
 
 // ===== ANALYSIS =====
+function analysisStoreList(){return analysisBizId==='all'?stores:stores.filter(s=>s.business_id===analysisBizId)}
+function renderAnalysisBizTabs(){
+  if(currentUser.role!=='owner')return;
+  const wrap=document.getElementById('analysis-biz-tabs');
+  const btnWrap=document.getElementById('analysis-biz-btn-wrap');
+  if(!wrap||!btnWrap)return;
+  if(!businesses.length){wrap.style.display='none';return}
+  wrap.style.display='block';
+  const tab=(id,label,color)=>`<button style="padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;border:0.5px solid var(--border2);background:${analysisBizId===id?(color||'var(--text)'):'var(--surface)'};color:${analysisBizId===id?'#fff':'var(--text2)'};cursor:pointer;white-space:nowrap;font-family:inherit;flex-shrink:0" onclick="switchAnalysisBiz('${id}')">${label}</button>`;
+  btnWrap.innerHTML=tab('all','すべて','#555')+businesses.map(b=>tab(b.id,(b.icon||'🏢')+' '+b.name,b.color)).join('');
+}
+function switchAnalysisBiz(id){analysisBizId=id;renderAnalysisBizTabs();const first=analysisStoreList()[0];analysisStoreId=first?.id||null;renderAnalysisStoreTabs();loadAnalysis()}
 function renderAnalysisStoreTabs(){
   if(currentUser.role!=='owner')return;
   const wrap=document.getElementById('analysis-store-tabs');
   const btnWrap=document.getElementById('analysis-store-btn-wrap');
   if(!wrap||!btnWrap)return;
   wrap.style.display='block';
-  btnWrap.innerHTML=stores.map(s=>`<button style="padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;border:0.5px solid var(--border2);background:${analysisStoreId===s.id?s.color:'var(--surface)'};color:${analysisStoreId===s.id?'#fff':'var(--text2)'};cursor:pointer;white-space:nowrap;font-family:inherit;flex-shrink:0" onclick="switchAnalysisStore('${s.id}')">${s.icon}${s.name}</button>`).join('');
+  btnWrap.innerHTML=analysisStoreList().map(s=>`<button style="padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;border:0.5px solid var(--border2);background:${analysisStoreId===s.id?s.color:'var(--surface)'};color:${analysisStoreId===s.id?'#fff':'var(--text2)'};cursor:pointer;white-space:nowrap;font-family:inherit;flex-shrink:0" onclick="switchAnalysisStore('${s.id}')">${s.icon}${s.name}</button>`).join('');
 }
 function switchAnalysisStore(id){analysisStoreId=id;renderAnalysisStoreTabs();loadAnalysis()}
 
