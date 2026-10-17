@@ -1330,26 +1330,27 @@ PAGES.list=async function(arg){
   if(S.page!=='list')return;
   renderList();
 };
-function listFiltered(){
+function listFiltered(skip={}){
   const q=LI.q.trim().toLowerCase();
   return LI.rows.filter(e=>{
-    if(LI.status!=='all'&&e.status!==LI.status)return false;
+    if(!skip.status&&LI.status!=='all'&&e.status!==LI.status)return false;
     if(LI.unit!=='all'&&e.store_id!==LI.unit)return false;
-    if(LI.month!=='all'&&!(e.date||'').startsWith(LI.month))return false;
-    if(q&&!((e.vendor_name||'')+' '+(e.memo||'')+' '+(catById(e.category_id)?.name||'')).toLowerCase().includes(q))return false;
+    if(!skip.month&&LI.month==='none'&&e.date)return false;
+    if(!skip.month&&LI.month!=='all'&&LI.month!=='none'&&!(e.date||'').startsWith(LI.month))return false;
+    if(!skip.q&&q&&!((e.vendor_name||'')+' '+(e.memo||'')+' '+(catById(e.category_id)?.name||'')).toLowerCase().includes(q))return false;
     return true;
   });
 }
 function renderList(){
-  const months=[...new Set([ym(),LI.month==='all'?null:LI.month,...LI.rows.map(e=>(e.date||'').slice(0,7))].filter(Boolean))].sort().reverse();
-  const base=LI.rows.filter(e=>LI.unit==='all'||e.store_id===LI.unit);
+  const months=[...new Set([ym(),(LI.month==='all'||LI.month==='none')?null:LI.month,...LI.rows.map(e=>(e.date||'').slice(0,7))].filter(Boolean))].sort().reverse();
+  const base=listFiltered({status:true,q:true});
   const counts={all:base.length};['pending','approved','check'].forEach(s=>counts[s]=base.filter(e=>e.status===s).length);
   let h=`<div class="page-head"><button class="back-btn" onclick="go('home')" aria-label="ホームへ">‹</button><div class="page-title">経費の一覧</div><button class="btn btn-primary btn-small" onclick="go('entry')">＋ 手で入力</button></div>
   <div class="page-sub">${esc(ctxLabel().name)}</div>
   ${myStores().length>1?`<div class="seg">${[['all','ぜんぶ']].concat(myStores().map(s=>[s.id,unitIcon(s)+' '+unitLabel(s)])).map(([k,l])=>`<button class="${LI.unit===k?'active':''}" onclick="LI.unit='${k}';renderList()">${esc(l)}</button>`).join('')}</div>`:''}
   <div class="seg">${[['all','すべて'],['pending','確認待ち'],['approved','確認ずみ'],['check','要確認']].map(([k,l])=>`<button class="${LI.status===k?'active':''}" onclick="LI.status='${k}';renderList()">${l} ${counts[k]}</button>`).join('')}</div>
   <div style="display:flex;gap:8px;margin-bottom:12px">
-    <select class="input" style="width:auto;flex-shrink:0" onchange="LI.month=this.value;renderList()"><option value="all" ${LI.month==='all'?'selected':''}>すべての月</option>${months.map(m=>`<option value="${m}" ${m===LI.month?'selected':''}>${monthLabel(m)}</option>`).join('')}</select>
+    <select class="input" style="width:auto;flex-shrink:0" onchange="LI.month=this.value;renderList()"><option value="all" ${LI.month==='all'?'selected':''}>すべての月</option>${months.map(m=>{const n=LI.rows.filter(e=>(LI.unit==='all'||e.store_id===LI.unit)&&(e.date||'').startsWith(m)).length;return `<option value="${m}" ${m===LI.month?'selected':''}>${monthLabel(m)}（${n}件）</option>`}).join('')}${LI.rows.some(e=>!e.date)?`<option value="none" ${LI.month==='none'?'selected':''}>日付なし（${LI.rows.filter(e=>!e.date&&(LI.unit==='all'||e.store_id===LI.unit)).length}件）</option>`:''}</select>
     <input class="input" type="search" placeholder="お店・メモでさがす" value="${esc(LI.q)}" oninput="LI.q=this.value;renderListBody()" style="flex:1;min-width:0"/>
   </div>
   <div id="list-body"></div>`;
@@ -1364,7 +1365,15 @@ function renderListBody(){
   const pend=list.filter(e=>e.status==='pending');
   h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="hint">${list.length}件</span><span style="font-weight:700" class="num">合計 ${yen(total)}</span></div>`;
   if(pend.length>1)h+=`<button class="btn btn-secondary" style="margin-bottom:12px" onclick="approveAll()">表示中の確認待ち ${pend.length}件 をまとめて「確認ずみ」にする</button>`;
-  if(!list.length){$('list-body').innerHTML=h+'<div class="empty">該当する経費はありません</div>';return}
+  if(!list.length){
+    const other=listFiltered({month:true});
+    let msg='<div class="empty">該当する経費はありません</div>';
+    if(LI.month!=='all'&&other.length){
+      const ms=[...new Set(other.map(e=>e.date?monthLabel(e.date.slice(0,7)):'日付なし'))].slice(0,3).join('・');
+      msg=`<div class="alert alert-i" style="text-align:center">${LI.month==='none'?'日付なしの経費':esc(monthLabel(LI.month))+'の経費'}はありません。<br>ほかに <b>${other.length}件</b> あります（${esc(ms)}）<br><button class="btn btn-primary" style="margin-top:10px" onclick="LI.month='all';renderList()">すべての月を見る</button></div>`;
+    }
+    $('list-body').innerHTML=h+msg;return;
+  }
   let lastDate=null;h+='<div class="card" style="padding:2px 14px">';
   list.forEach(e=>{
     if(e.date!==lastDate){
