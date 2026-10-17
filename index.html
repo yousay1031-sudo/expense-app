@@ -1210,6 +1210,13 @@ input[type=file]{display:none}
   <div class="page-sub">お店の情報やアプリの設定を変更できます</div>
   <div id="conn-bar" class="conn-status conn-warn"><span class="conn-dot"></span><span id="conn-text">確認しています...</span></div>
 
+  <div class="settings-section" id="business-settings-section">
+    <div class="settings-group">事業管理</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">事業ごとに店舗を分けると、経費が事業をまたいで混ざりません（例: 飲食／洗車）</div>
+    <div id="business-list-settings"></div>
+    <button class="btn-secondary" onclick="openAddBusiness()">＋ 事業を追加</button>
+  </div>
+
   <div class="settings-section" id="store-settings-section">
     <div class="settings-group">店舗管理</div>
     <div id="store-list-settings"></div>
@@ -1528,11 +1535,35 @@ input[type=file]{display:none}
 </div>
 
 <!-- STORE MODAL -->
+<!-- BUSINESS MODAL -->
+<div class="modal-overlay" id="business-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="business-modal-title">事業を追加</div>
+    <div class="modal-sub">表示したい名前を自由に設定できます（例: 飲食）</div>
+    <div class="form-field"><div class="form-label">事業名（表示名）</div><input class="form-input" id="bm-name" placeholder="例: 飲食"/></div>
+    <div class="fg2">
+      <div class="form-field"><div class="form-label">アイコン（絵文字）</div><input class="form-input" id="bm-icon" placeholder="🏢" style="font-size:20px;text-align:center"/></div>
+      <div class="form-field"><div class="form-label">カラー</div><input type="color" id="bm-color" value="#185FA5" style="height:44px;width:100%;border:0.5px solid var(--border2);border-radius:10px;padding:4px 8px"/></div>
+    </div>
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn-primary" onclick="saveBusiness()">保存</button>
+      <button class="btn-secondary" onclick="closeModal('business-modal')">キャンセル</button>
+    </div>
+    <button id="bm-delete-btn" onclick="deleteBusiness()" style="display:none;width:100%;margin-top:10px;padding:10px;border-radius:10px;border:0.5px solid #e5484d44;background:none;color:#e5484d;font-size:13px;font-family:inherit;cursor:pointer">この事業を削除</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="store-modal">
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title" id="store-modal-title">店舗を追加</div>
     <div class="modal-sub">店舗名・アイコン・カラーを設定してください</div>
+    <div class="form-field">
+      <div class="form-label">所属する事業</div>
+      <select class="form-input" id="sm-business"></select>
+      <div class="form-hint">この店舗がどの事業のものかを選びます</div>
+    </div>
     <div class="form-field"><div class="form-label">店舗名</div><input class="form-input" id="sm-name" placeholder="例: ○○洗車店"/></div>
     <div class="fg2">
       <div class="form-field"><div class="form-label">アイコン（絵文字）</div><input class="form-input" id="sm-icon" placeholder="🏪" style="font-size:20px;text-align:center"/></div>
@@ -1816,9 +1847,9 @@ let API_KEY=localStorage.getItem('api_key')||'';
 
 // ===== STATE =====
 let currentUser=null; // {username, role, store_id}
-let stores=[], depts=[], allExpenses=[];
+let stores=[], depts=[], businesses=[], allExpenses=[];
 let currentFilter='all', currentDeptStoreId=null;
-let editingExpenseId=null, editingStoreId=null, editingDeptId=null, editingUserId=null;
+let editingExpenseId=null, editingStoreId=null, editingDeptId=null, editingUserId=null, editingBusinessId=null;
 let appUsers=[];
 let arClients=[];
 let expenseCategories=[];
@@ -1977,7 +2008,7 @@ async function doLogin(){
   }
 }
 function doLogout(){
-  currentUser=null;stores=[];depts=[];allExpenses=[];
+  currentUser=null;stores=[];depts=[];businesses=[];allExpenses=[];
   localStorage.removeItem('current_user');
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
@@ -2002,10 +2033,13 @@ async function bootApp(){
   try{
     stores=await sbGet('stores?select=*&order=created_at');
     depts=await sbGet('departments?select=*&order=created_at');
+    try{ businesses=await sbGet('businesses?select=*&order=sort_order,created_at'); }
+    catch(be){ businesses=[]; } // 事業マスタSQL未実行でも落とさない
     document.getElementById('conn-bar').className='conn-status conn-ok';
     document.getElementById('conn-text').textContent='データベース接続（上級者向け）済み';
   }catch(e){
-    stores=[{id:'s1',name:'店舗A',color:'#185FA5',icon:'🚿'},{id:'s2',name:'店舗B',color:'#BA7517',icon:'🍽️'}];
+    businesses=[{id:'b1',name:'洗車',icon:'🚿',color:'#185FA5',sort_order:1},{id:'b2',name:'飲食',icon:'🍽️',color:'#BA7517',sort_order:2}];
+    stores=[{id:'s1',name:'店舗A',color:'#185FA5',icon:'🚿',business_id:'b1'},{id:'s2',name:'店舗B',color:'#BA7517',icon:'🍽️',business_id:'b2'}];
     depts=[{id:'d1',name:'洗車部門',color:'#185FA5',keywords:['ENEOS','洗車','ケルヒャー','燃料'],store_id:'s1'},{id:'d2',name:'車両販売部門',color:'#0F6E56',keywords:['タイヤ','部品','車検','オートバックス'],store_id:'s1'},{id:'d3',name:'飲食部門',color:'#BA7517',keywords:['食材','仕入れ','業務スーパー'],store_id:'s2'}];
     document.getElementById('conn-bar').className='conn-status conn-warn';
     document.getElementById('conn-text').textContent='DB未接続 — 設定でSQLを実行してください';
@@ -2032,6 +2066,7 @@ async function bootApp(){
   renderHeaderBadge();
   setupUI();
   await loadDashboard();
+  renderBusinessSettings();
   renderDeptSettings();
   renderStoreSettings();
   if(currentUser.role==='owner'){await loadUsers();renderUserSettings()}
@@ -2104,7 +2139,7 @@ function navTo(name){
   const sst=document.getElementById('settings-api-status');
   if(sk&&API_KEY){sk.value=API_KEY;}
   if(sst&&API_KEY&&API_KEY.startsWith('sk-ant-')&&API_KEY.length>20){sst.textContent='保存済み ✓';sst.style.cssText='font-size:12px;font-weight:700;padding:8px 12px;border-radius:10px;background:var(--green-l);color:var(--green);white-space:nowrap;flex-shrink:0';}
-  renderDeptSettings();renderStoreSettings();renderCategorySettings();loadArClients().then(()=>renderArClientSettings());if(currentUser.role==='owner'){loadUsers().then(()=>renderUserSettings());loadStoreCards().then(()=>renderCardSettings())}else{document.getElementById('user-settings-section').style.display='none';document.getElementById('store-settings-section').style.display='none';}initCsvExport();initPdfForm();initGasForm();}
+  renderBusinessSettings();renderDeptSettings();renderStoreSettings();renderCategorySettings();loadArClients().then(()=>renderArClientSettings());if(currentUser.role==='owner'){loadUsers().then(()=>renderUserSettings());loadStoreCards().then(()=>renderCardSettings())}else{document.getElementById('user-settings-section').style.display='none';document.getElementById('store-settings-section').style.display='none';}initCsvExport();initPdfForm();initGasForm();}
   if(name==='daily')initDailyPage();
   if(name==='vehicles'){loadVehicles();}
   if(name==='owner-scan')initOwnerScan();
@@ -3342,15 +3377,74 @@ async function calcBreakeven(){
 
 // ===== SETTINGS =====
 
+function renderBusinessSettings(){
+  const sec=document.getElementById('business-settings-section');
+  if(!sec)return;
+  if(currentUser.role!=='owner'){sec.style.display='none';return}
+  sec.style.display='block';
+  const el=document.getElementById('business-list-settings');
+  if(!businesses.length){el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:10px 0">まだ事業がありません。「＋ 事業を追加」から作成してください。</div>';return}
+  el.innerHTML=businesses.map(b=>{
+    const cnt=stores.filter(s=>s.business_id===b.id).length;
+    return `<div class="store-card">
+      <div class="store-card-icon" style="background:${b.color}22">${b.icon||'🏢'}</div>
+      <div class="store-card-info"><div class="store-card-name">${b.name}</div><div class="store-card-sub">${cnt}店舗</div></div>
+      <button style="padding:9px 14px;border-radius:8px;font-size:13px;border:0.5px solid var(--border2);background:var(--surface2);cursor:pointer;font-family:inherit;flex-shrink:0" onclick="openEditBusiness('${b.id}')">編集</button>
+    </div>`;}).join('');
+}
+
 function renderStoreSettings(){
   if(currentUser.role!=='owner'){const el=document.getElementById('store-settings-section');if(el)el.style.display='none';return}
   document.getElementById('store-settings-section').style.display='block';
-  document.getElementById('store-list-settings').innerHTML=stores.map(s=>`
+  const storeCardHtml=s=>`
     <div class="store-card">
       <div class="store-card-icon" style="background:${s.color}22">${s.icon}</div>
       <div class="store-card-info"><div class="store-card-name">${s.name}</div><div class="store-card-sub">${depts.filter(d=>d.store_id===s.id).length}部門</div></div>
       <button style="padding:9px 14px;border-radius:8px;font-size:13px;border:0.5px solid var(--border2);background:var(--surface2);cursor:pointer;font-family:inherit;flex-shrink:0" onclick="openEditStore('${s.id}')">編集</button>
-    </div>`).join('');
+    </div>`;
+  let html='';
+  if(businesses.length){
+    businesses.forEach(b=>{
+      const bs=stores.filter(s=>s.business_id===b.id);
+      if(!bs.length)return;
+      html+=`<div style="font-size:12px;font-weight:700;color:${b.color};margin:6px 0 6px;display:flex;align-items:center;gap:5px">${b.icon||'🏢'} ${b.name}</div>`+bs.map(storeCardHtml).join('');
+    });
+    const orphan=stores.filter(s=>!s.business_id||!businesses.find(b=>b.id===s.business_id));
+    if(orphan.length){
+      html+=`<div style="font-size:12px;font-weight:700;color:var(--text3);margin:6px 0 6px">事業未設定</div>`+orphan.map(storeCardHtml).join('');
+    }
+  } else {
+    html=stores.map(storeCardHtml).join('');
+  }
+  document.getElementById('store-list-settings').innerHTML=html;
+}
+
+function openAddBusiness(){editingBusinessId=null;document.getElementById('business-modal-title').textContent='事業を追加';document.getElementById('bm-name').value='';document.getElementById('bm-icon').value='🏢';document.getElementById('bm-color').value='#185FA5';document.getElementById('bm-delete-btn').style.display='none';document.getElementById('business-modal').classList.add('open')}
+function openEditBusiness(id){const b=businesses.find(x=>x.id===id);if(!b)return;editingBusinessId=id;document.getElementById('business-modal-title').textContent='事業を編集';document.getElementById('bm-name').value=b.name;document.getElementById('bm-icon').value=b.icon||'🏢';document.getElementById('bm-color').value=b.color||'#185FA5';document.getElementById('bm-delete-btn').style.display=(stores.filter(s=>s.business_id===id).length?'none':'block');document.getElementById('business-modal').classList.add('open')}
+async function saveBusiness(){
+  const name=document.getElementById('bm-name').value.trim();
+  const icon=document.getElementById('bm-icon').value.trim()||'🏢';
+  const color=document.getElementById('bm-color').value;
+  if(!name){showToast('事業名を入力してください');return}
+  try{
+    if(editingBusinessId){await sbPatch(`businesses?id=eq.${editingBusinessId}`,{name,icon,color});const idx=businesses.findIndex(b=>b.id===editingBusinessId);if(idx>=0)businesses[idx]={...businesses[idx],name,icon,color}}
+    else{const so=businesses.length?Math.max(...businesses.map(b=>b.sort_order||0))+1:1;const saved=await sbPost('businesses',{name,icon,color,sort_order:so});businesses.push(Array.isArray(saved)?saved[0]:saved)}
+    closeModal('business-modal');renderBusinessSettings();renderStoreSettings();showToast('保存しました ✓','success');
+  }catch(e){showToast('エラー: '+e.message,'error')}
+}
+async function deleteBusiness(){
+  if(!editingBusinessId)return;
+  if(stores.filter(s=>s.business_id===editingBusinessId).length){showToast('この事業には店舗があります。先に店舗の事業を変更してください');return}
+  if(!confirm('この事業を削除しますか？'))return;
+  try{
+    await sbDelete(`businesses?id=eq.${editingBusinessId}`);
+    businesses=businesses.filter(b=>b.id!==editingBusinessId);
+    closeModal('business-modal');renderBusinessSettings();renderStoreSettings();showToast('削除しました ✓','success');
+  }catch(e){showToast('エラー: '+e.message,'error')}
+}
+function fillBusinessSelect(selectedId){
+  const sel=document.getElementById('sm-business');if(!sel)return;
+  sel.innerHTML=businesses.map(b=>`<option value="${b.id}" ${b.id===selectedId?'selected':''}>${b.icon||'🏢'} ${b.name}</option>`).join('')+`<option value="" ${!selectedId?'selected':''}>（未設定）</option>`;
 }
 
 function renderDeptSettings(){
@@ -3373,8 +3467,8 @@ function renderDeptSettings(){
 
 function switchDeptStore(id){currentDeptStoreId=id;renderDeptSettings()}
 
-function openAddStore(){editingStoreId=null;document.getElementById('store-modal-title').textContent='店舗を追加';document.getElementById('sm-name').value='';document.getElementById('sm-icon').value='🏪';document.getElementById('sm-color').value='#185FA5';document.getElementById('sm-card-fee').value='3.24';document.getElementById('sm-app-fee').value='1.98';document.getElementById('sm-type').value='other';document.getElementById('store-modal').classList.add('open')}
-function openEditStore(id){const s=stores.find(x=>x.id===id);if(!s)return;editingStoreId=id;document.getElementById('store-modal-title').textContent='店舗を編集';document.getElementById('sm-name').value=s.name;document.getElementById('sm-icon').value=s.icon||'🏪';document.getElementById('sm-color').value=s.color||'#185FA5';document.getElementById('sm-card-fee').value=s.card_fee_rate||3.24;document.getElementById('sm-app-fee').value=s.app_fee_rate||1.98;document.getElementById('sm-type').value=s.store_type||'other';document.getElementById('store-modal').classList.add('open')}
+function openAddStore(){editingStoreId=null;document.getElementById('store-modal-title').textContent='店舗を追加';document.getElementById('sm-name').value='';document.getElementById('sm-icon').value='🏪';document.getElementById('sm-color').value='#185FA5';document.getElementById('sm-card-fee').value='3.24';document.getElementById('sm-app-fee').value='1.98';document.getElementById('sm-type').value='other';fillBusinessSelect(businesses[0]?.id||'');document.getElementById('store-modal').classList.add('open')}
+function openEditStore(id){const s=stores.find(x=>x.id===id);if(!s)return;editingStoreId=id;document.getElementById('store-modal-title').textContent='店舗を編集';document.getElementById('sm-name').value=s.name;document.getElementById('sm-icon').value=s.icon||'🏪';document.getElementById('sm-color').value=s.color||'#185FA5';document.getElementById('sm-card-fee').value=s.card_fee_rate||3.24;document.getElementById('sm-app-fee').value=s.app_fee_rate||1.98;document.getElementById('sm-type').value=s.store_type||'other';fillBusinessSelect(s.business_id||'');document.getElementById('store-modal').classList.add('open')}
 async function saveStore(){
   const name=document.getElementById('sm-name').value.trim();
   const icon=document.getElementById('sm-icon').value.trim()||'🏪';
@@ -3383,10 +3477,11 @@ async function saveStore(){
   const cardFeeRate=parseFloat(document.getElementById('sm-card-fee').value)||3.24;
   const appFeeRate=parseFloat(document.getElementById('sm-app-fee').value)||1.98;
   const storeType=document.getElementById('sm-type').value||'other';
+  const businessId=document.getElementById('sm-business')?.value||null;
   try{
-    if(editingStoreId){await sbPatch(`stores?id=eq.${editingStoreId}`,{name,icon,color,card_fee_rate:cardFeeRate,app_fee_rate:appFeeRate,store_type:storeType});const idx=stores.findIndex(s=>s.id===editingStoreId);if(idx>=0)stores[idx]={...stores[idx],name,icon,color,card_fee_rate:cardFeeRate,app_fee_rate:appFeeRate,store_type:storeType}}
-    else{const saved=await sbPost('stores',{name,icon,color,card_fee_rate:cardFeeRate,app_fee_rate:appFeeRate,store_type:storeType});stores.push(Array.isArray(saved)?saved[0]:saved)}
-    closeModal('store-modal');renderStoreSettings();renderHeaderBadge();showToast('保存しました ✓','success');
+    if(editingStoreId){await sbPatch(`stores?id=eq.${editingStoreId}`,{name,icon,color,card_fee_rate:cardFeeRate,app_fee_rate:appFeeRate,store_type:storeType,business_id:businessId});const idx=stores.findIndex(s=>s.id===editingStoreId);if(idx>=0)stores[idx]={...stores[idx],name,icon,color,card_fee_rate:cardFeeRate,app_fee_rate:appFeeRate,store_type:storeType,business_id:businessId}}
+    else{const saved=await sbPost('stores',{name,icon,color,card_fee_rate:cardFeeRate,app_fee_rate:appFeeRate,store_type:storeType,business_id:businessId});stores.push(Array.isArray(saved)?saved[0]:saved)}
+    closeModal('store-modal');renderBusinessSettings();renderStoreSettings();renderHeaderBadge();showToast('保存しました ✓','success');
   }catch(e){showToast('エラー: '+e.message,'error')}
 }
 
