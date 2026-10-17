@@ -2222,7 +2222,7 @@ async function cardPhoto(){
 async function cardCsv(){
   const f=await pickFile('csv');if(!f)return;
   let text='';
-  try{const buf=await f.arrayBuffer();text=new TextDecoder('utf-8').decode(buf);if(/ /.test(text))text=new TextDecoder('shift_jis').decode(buf)}catch(e){CD.error='ファイルを開けませんでした';renderCards();return}
+  try{const buf=await f.arrayBuffer();text=new TextDecoder('utf-8').decode(buf);if(/�/.test(text))text=new TextDecoder('shift_jis').decode(buf)}catch(e){CD.error='ファイルを開けませんでした';renderCards();return}
   const items=[];let last4=null,month=null;
   text.split(/\r?\n/).forEach((line,i)=>{
     if(i<6&&!last4){const m=line.match(/\*{2,}\s*(\d{4})|(\d{4})\s*$/);if(m)last4=m[1]||m[2]}
