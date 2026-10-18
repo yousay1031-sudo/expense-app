@@ -457,6 +457,15 @@ const db={
   post:(p,b)=>sbReq('POST',p,b).then(r=>Array.isArray(r)?r[0]:r),
   postMany:(p,b)=>sbReq('POST',p,b),
   patch:(p,b)=>sbReq('PATCH',p,b),
+  // 1回に1000件までしか返ってこないので、全部そろうまで分けて取る
+  async getAll(p,max=100000){
+    const out=[];const page=1000;
+    for(let off=0;off<max;off+=page){
+      const r=await sbReq('GET',p+(p.includes('?')?'&':'?')+`limit=${page}&offset=${off}`);
+      out.push(...r);if(r.length<page)break;
+    }
+    return out;
+  },
   del:p=>sbReq('DELETE',p),
 };
 // 店舗IDのリストで絞り込むクエリ片
@@ -778,16 +787,16 @@ function isCashPay(p){return !p||p==='現金'||p==='cash'}
 // ===== DATA HELPERS =====
 async function fetchExpenses(storeIds,from,to,select='*'){
   if(!storeIds.length)return [];
-  let q=`expenses?select=${select}${inStores(storeIds)}&order=date.desc,created_at.desc&limit=2000`;
+  let q=`expenses?select=${select}${inStores(storeIds)}&order=date.desc.nullsfirst,created_at.desc,id`;
   if(from)q+=`&date=gte.${from}`;if(to)q+=`&date=lte.${to}`;
-  return db.get(q);
+  return db.getAll(q);
 }
 async function fetchSales(storeIds,from,to){
   if(!storeIds.length)return {reports:[],ar:[]};
   const f=`${inStores(storeIds)}&date=gte.${from}&date=lte.${to}`;
   const [reports,ar]=await Promise.all([
-    db.get('daily_reports?select=*'+f+'&order=date'),
-    db.get('daily_ar_entries?select=*'+f+'&order=date').catch(()=>[]),
+    db.getAll('daily_reports?select=*'+f+'&order=date,id'),
+    db.getAll('daily_ar_entries?select=*'+f+'&order=date,id').catch(()=>[]),
   ]);
   return {reports,ar};
 }
@@ -937,7 +946,7 @@ PAGES.home=async function(){
     const [ex,sales,pendingRows]=await Promise.all([
       fetchExpenses(ids,monthStart(m),monthEnd(m),'id,store_id,total,date,status'),
       fetchSales(ids,monthStart(m),monthEnd(m)),
-      db.get('expenses?select=id,store_id,vendor_name,total,date'+inStores(ids)+'&status=eq.pending&order=created_at.desc&limit=200'),
+      db.getAll('expenses?select=id,store_id'+inStores(ids)+'&status=eq.pending&order=id'),
     ]);
     if(S.page!=='home')return;
     const isToday=r=>r.date===today;
@@ -954,7 +963,7 @@ PAGES.home=async function(){
     if(pendingRows.length)todos.push({text:`確認待ちの経費が ${pendingRows.length}件 あります`,act:"go('list','pending')",urgent:pendingRows.length>=10});
     else todos.push({done:true,text:'確認待ちの経費はありません'});
     const vst=stores.filter(st=>bizOfStore(st.id)?.track_vehicles);
-    if(vst.length){try{const vv=(await db.get('vehicles?select=*'+inStores(vst.map(x=>x.id)))).filter(v=>!v.deleted_at&&ledgerMissing(v).length);
+    if(vst.length){try{const vv=(await db.getAll('vehicles?select=*'+inStores(vst.map(x=>x.id))+'&order=id')).filter(v=>!v.deleted_at&&ledgerMissing(v).length);
       if(vv.length)todos.push({text:`古物台帳の記入が足りない車が ${vv.length}台 あります`,act:"VH.filter='todo';go('vehicles')",urgent:true});}catch(e){}}
     todos.push({text:'レシート・領収書を撮影する',act:"go('scan')"});
 
@@ -1321,12 +1330,14 @@ async function entrySave(){
 <script>
 // ===== LIST（経費の一覧・確認・修正） =====
 const LI={status:'all',month:null,q:'',rows:[],loaded:false,unit:'all'};
+// 一覧で使う列だけ取る（AIの生データなど重い列は取らない）
+const LIST_COLS='id,store_id,department_id,category_id,vehicle_id,vendor_name,total,date,payment_method,memo,status,doc_type,image_url,created_by,created_at,card_last4';
 const STATUS_LABEL={pending:'確認待ち',approved:'確認ずみ',check:'要確認'};
 PAGES.list=async function(arg){
   if(arg==='pending'){LI.status='pending';LI.month='all'}
   if(!LI.month)LI.month=ym();
   $('page-list').innerHTML=pageHead('経費の一覧','')+'<div class="busy"><div class="spinner"></div><div class="busy-title">読み込んでいます...</div></div>';
-  try{LI.rows=await fetchExpenses(ctxStoreIds())}catch(e){LI.rows=[];toast('読み込みに失敗しました','err')}
+  try{LI.rows=await fetchExpenses(ctxStoreIds(),null,null,LIST_COLS)}catch(e){LI.rows=[];toast('読み込みに失敗しました','err')}
   if(S.page!=='list')return;
   renderList();
 };
@@ -1870,7 +1881,7 @@ async function reportWeek(){
 async function reportAr(){
   const ids=rpIds();const m=RP.month;
   try{
-    const all=await db.get('daily_ar_entries?select=*'+inStores(ids)+`&date=gte.${monthStart(addMonths(m,-5))}&date=lte.${monthEnd(m)}&order=date.desc`);
+    const all=await db.getAll('daily_ar_entries?select=*'+inStores(ids)+`&date=gte.${monthStart(addMonths(m,-5))}&date=lte.${monthEnd(m)}&order=date.desc,id`);
     const by={};all.forEach(a=>{const k=a.client_name||'名前なし';by[k]=by[k]||{m:0,t:0,last:a.date};by[k].t+=a.amount||0;if((a.date||'').startsWith(m))by[k].m+=a.amount||0});
     const rows=Object.entries(by).sort((a,b)=>b[1].m-a[1].m||b[1].t-a[1].t);
     $('rp-body').innerHTML=`<div class="card"><div class="card-title">後払いのお客さん（${monthLabel(m)}）</div>${rows.length?rows.map(([n,v])=>`<div class="row"><div class="row-main"><div class="row-title">${esc(n)}</div><div class="row-sub">6か月の合計 ${yen(v.t)} ・ 最後 ${esc(v.last||'—')}</div></div><div class="row-right"><div class="amount">${yen(v.m)}</div><div class="hint">この月</div></div></div>`).join(''):'<div class="empty">後払いの記録はありません</div>'}</div>`;
@@ -1985,8 +1996,8 @@ PAGES.vehicles=async function(){
   try{
     const ids=vs.map(s=>s.id);
     const [rows,ex]=await Promise.all([
-      db.get('vehicles?select=*'+inStores(ids)+'&order=created_at.desc').then(r=>r.filter(v=>!v.deleted_at)),
-      db.get('expenses?select=id,vehicle_id,total,vendor_name,date,memo'+inStores(ids)+'&vehicle_id=not.is.null').catch(()=>[]),
+      db.getAll('vehicles?select=*'+inStores(ids)+'&order=created_at.desc,id').then(r=>r.filter(v=>!v.deleted_at)),
+      db.getAll('expenses?select=id,vehicle_id,total,vendor_name,date,memo'+inStores(ids)+'&vehicle_id=not.is.null&order=id').catch(()=>[]),
     ]);
     VH.rows=rows;VH.exp={};ex.forEach(e=>{(VH.exp[e.vehicle_id]=VH.exp[e.vehicle_id]||[]).push(e)});
   }catch(e){VH.rows=[];toast('読み込みに失敗しました','err')}
@@ -2155,7 +2166,7 @@ function ledgerSheet(){
 }
 async function ledgerRows(from,to,withDeleted){
   const ids=vehicleStores().map(s=>s.id);
-  const all=await db.get('vehicles?select=*'+inStores(ids)+'&order=purchase_date.asc,created_at.asc');
+  const all=await db.getAll('vehicles?select=*'+inStores(ids)+'&order=purchase_date.asc,created_at.asc,id');
   return all.filter(v=>(withDeleted||!v.deleted_at)&&((v.purchase_date&&v.purchase_date>=from&&v.purchase_date<=to)||(v.sale_date&&v.sale_date>=from&&v.sale_date<=to)));
 }
 const LEDGER_HEAD=['番号','受入年月日','品目','数量','車名','型式','車台番号','登録番号','年式','色','走行距離(km)','仕入先 区分','仕入先 氏名・名称','仕入先 住所','仕入先 職業','仕入先 年齢','本人確認の方法','確認書類の番号等','仕入金額','払出年月日','売却先 区分','売却先 氏名・名称','売却先 住所','売却先 職業','売却先 年齢','売却先 確認方法','売却金額','台帳の不足','取り消し','店舗'];
@@ -2678,7 +2689,10 @@ async function exportCsv(type){
       let t=csvLine(['日付','事業','店舗','部門','取引先','金額','消費税8%','消費税10%','支払方法','経費の種類','会計コード','メモ','書類','状態','インボイス番号','カード','画像URL','登録者','登録日時']);
       const dl={receipt:'レシート・領収書',delivery_note:'納品書',invoice:'請求書',card_statement:'カード明細',manual:'手入力'};
       ex.forEach(e=>{const c=catById(e.category_id);t+=csvLine([e.date,bizOfStore(e.store_id)?.name,storeName(e.store_id),deptById(e.department_id)?.name,e.vendor_name,e.total,e.tax_8,e.tax_10,normPay(e.payment_method),c?.name,c?.code,e.memo,dl[e.doc_type]||e.doc_type,STATUS_LABEL[e.status]||e.status,e.invoice_number,e.card_last4&&'****'+e.card_last4,e.image_url,e.created_by,(e.created_at||'').slice(0,16).replace('T',' ')])});
-      downloadText(`経費明細_${r.label}.csv`,t);xpStatus(`経費 ${ex.length}件をダウンロードしました`,'s');
+      downloadText(`経費明細_${r.label}.csv`,t);
+      const nd=await db.getAll('expenses?select=id'+inStores(ids)+'&date=is.null&order=id').catch(()=>[]);
+      if(nd.length)xpStatus(`経費 ${ex.length}件をダウンロードしました。ただし日付が入っていない経費が ${nd.length}件 あり、CSVに入っていません。経費の一覧で月を「日付なし」にして日付を入れてください。`,'w');
+      else xpStatus(`経費 ${ex.length}件をダウンロードしました`,'s');
     }else if(type==='daily'){
       const s=await fetchSales(ids,r.from,r.to);
       let t=csvLine(['日付','事業','店舗','現金売上','カード売上','アプリ売上','その他入金','後払い','売上合計','現金経費','カード経費','カード手数料','アプリ手数料','その他出金','支出合計','手元に残る','メモ']);
@@ -2690,7 +2704,7 @@ async function exportCsv(type){
       if(s.ar.length){let a=csvLine(['日付','店舗','後払い先','金額']);s.ar.forEach(x=>a+=csvLine([x.date,storeName(x.store_id),x.client_name,x.amount]));downloadText(`後払い明細_${r.label}.csv`,a)}
       xpStatus(`日計表 ${s.reports.length}日分をダウンロードしました`,'s');
     }else{
-      const all=await db.get('vehicles?select=*'+inStores(ids)+'&order=purchase_date.asc,created_at.asc');
+      const all=await db.getAll('vehicles?select=*'+inStores(ids)+'&order=purchase_date.asc,created_at.asc,id');
       const vs=all.filter(v=>!v.deleted_at&&((v.purchase_date&&v.purchase_date>=r.from&&v.purchase_date<=r.to)||(v.sale_date&&v.sale_date>=r.from&&v.sale_date<=r.to)));
       let t=csvLine(LEDGER_HEAD);vs.forEach((v,i)=>t+=csvLine(ledgerLine(v,i)));
       downloadText(`古物台帳_${r.label}.csv`,t);xpStatus(`車両 ${vs.length}台をダウンロードしました`,'s');
@@ -2737,7 +2751,7 @@ async function sendGas(){
         const s=await fetchSales([sid],monthStart(m),monthEnd(m));
         if(s.reports.length)await send({type:'daily',month:m,store_name:st.name,store_color:st.color,data:{daily:s.reports.map(d=>{const ar=sum(s.ar.filter(a=>a.date===d.date),a=>a.amount||0);const fee=feeOf(d);const inc=reportSales(d)+ar,out=(d.cash_expenses||0)+(d.card_expenses||0)+(d.other_expenses||0)+fee;return {...d,ar_total:ar,total_income:inc,total_expense:out,balance:inc-out}}),ar:s.ar}});
       }
-      if(bizOfStore(sid)?.track_vehicles){const vs=await db.get('vehicles?select=*&store_id=eq.'+sid);if(vs.length)await send({type:'vehicles',store_name:st.name,store_color:st.color,data:vs})}
+      if(bizOfStore(sid)?.track_vehicles){const vs=await db.getAll('vehicles?select=*&store_id=eq.'+sid+'&order=id');if(vs.length)await send({type:'vehicles',store_name:st.name,store_color:st.color,data:vs})}
     }
     xpStatus('スプレッドシートに送りました','s');
   }catch(e){xpStatus('送れませんでした：'+e.message,'d')}
