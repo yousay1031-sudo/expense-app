@@ -927,17 +927,22 @@ function deptPromptHint(stores,ex){
     parts.push(`お店${stores.length>1?k:''}「${s.name}」の部門: ${ds.map(d=>d.name).join(' / ')}\nスタッフが振り分けた例:\n`+list.map(x=>`- ${x.v||'?'}「${x.m||'?'}」→ ${x.d}`).join('\n'));
   });
   if(!parts.length)return '';
-  return `\n\n部門の振り分け：例を参考に、買った品目から各書類の dept に部門名をそのまま入れる。お店の名前ではなく品目で判断する（同じお店でも品目で部門が変わる）。どちらとも言えないものは null。1枚に別々の部門の品目がまざっているときは dept を null にして dept_mixed を true。\n`+parts.join('\n\n');
+  return `\n\n部門の振り分け：例を参考に、買った品目から各書類の dept に部門名をそのまま入れる。お店の名前ではなく品目で判断する（同じお店でも品目で部門が変わる）。どちらとも言えないものは null。1枚に別々の部門の品目がまざっているときは dept を null にして dept_mixed を true。例がまだ少ない部門もある。例に無い部門でも、品目がはっきりその部門のものなら選んでよい。\n`+parts.join('\n\n');
 }
 const DEPT_MIN_EACH=2;
-// AIがおすすめを出してよいか：合わせて5件以上、どの部門も2件以上
+const DEPT_MIN_ANY=10;
+// AIがおすすめを出してよいか：
+//  ・合わせて5件以上、どの部門も2件以上
+//  ・または、かたよっていても合わせて10件以上（車販がしばらく無い時期のため）
 function deptNeed(storeId,ex){
   const ds=S.depts.filter(d=>d.store_id===storeId).sort(sortByOrder);
   const list=(ex&&ex[storeId])||[];
   const each=ds.map(d=>({name:d.name,left:Math.max(0,DEPT_MIN_EACH-list.filter(x=>x.d===d.name).length)})).filter(x=>x.left>0);
   const eachLeft=each.reduce((a,x)=>a+x.left,0);
-  const left=Math.max(DEPT_MIN_EXAMPLES-list.length,eachLeft);
-  return {ready:ds.length>=2&&left===0,left,each,count:list.length};
+  const leftA=Math.max(DEPT_MIN_EXAMPLES-list.length,eachLeft);
+  const leftB=Math.max(0,DEPT_MIN_ANY-list.length);
+  const left=Math.min(leftA,leftB);
+  return {ready:ds.length>=2&&left===0,left,each:leftA<=leftB?each:[],count:list.length};
 }
 function deptByName(storeId,name){
   if(!name)return null;const n=String(name).trim();
