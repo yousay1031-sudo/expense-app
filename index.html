@@ -157,6 +157,10 @@ textarea.input{resize:none;min-height:72px}
 .unit-btns.sm .unit-btn{min-height:44px;padding:8px 10px;font-size:14px;border-radius:12px}
 .unit-btns.sm .ub-ico{font-size:18px}
 .guess-note{font-size:12px;color:var(--text3);margin:-8px 0 12px}
+.guess-note.warn{color:var(--amber);font-weight:700}
+.dept-seg button{padding:11px 20px;font-size:15px}
+.dept-need .label{color:var(--amber)}
+.dept-need .dept-seg button{border-color:var(--amber)}
 /* ===== CONTEXT PICKER ===== */
 .ctx-opt{display:flex;align-items:center;gap:12px;padding:13px 12px;border-radius:var(--r);cursor:pointer;border:0.5px solid transparent;margin-bottom:4px}
 .ctx-opt:active{background:var(--surface2)}
@@ -894,6 +898,47 @@ function guessDept(storeId,texts){
   });
   return best;
 }
+// ===== 部門の学習 =====
+// 人が部門を選んだ過去の経費を「お手本」にして、AIに部門を選ばせる。
+// お手本が少ないうちはAIは選ばない（人が選ぶ）
+const DEPT_MIN_EXAMPLES=5;
+async function deptExamples(storeIds){
+  const ids=storeIds.filter(id=>S.depts.filter(d=>d.store_id===id).length>=2);
+  const out={};ids.forEach(id=>out[id]=[]);
+  if(!ids.length)return out;
+  try{
+    const rows=await db.get('expenses?select=store_id,vendor_name,memo,department_id'+inStores(ids)+'&department_id=not.is.null&status=neq.check&order=created_at.desc&limit=400');
+    rows.forEach(r=>{
+      const dp=deptById(r.department_id);
+      if(!dp||dp.store_id!==r.store_id||!out[r.store_id]||out[r.store_id].length>=60)return;
+      if(!r.vendor_name&&!r.memo)return;
+      out[r.store_id].push({v:(r.vendor_name||'').slice(0,40),m:(r.memo||'').slice(0,60),d:dp.name});
+    });
+  }catch(e){}
+  return out;
+}
+// AIに渡す説明文（お店ごとの部門とお手本）
+function deptPromptHint(stores,ex){
+  const parts=[];
+  stores.forEach((s,k)=>{
+    const ds=S.depts.filter(d=>d.store_id===s.id);
+    const list=ex[s.id]||[];
+    if(ds.length<2||list.length<DEPT_MIN_EXAMPLES)return;
+    parts.push(`お店${stores.length>1?k:''}「${s.name}」の部門: ${ds.map(d=>d.name).join(' / ')}\nスタッフが振り分けた例:\n`+list.map(x=>`- ${x.v||'?'}「${x.m||'?'}」→ ${x.d}`).join('\n'));
+  });
+  if(!parts.length)return '';
+  return `\n\n部門の振り分け：例を参考に、買った品目から各書類の dept に部門名をそのまま入れる。お店の名前ではなく品目で判断する（同じお店でも品目で部門が変わる）。どちらとも言えないものは null。1枚に別々の部門の品目がまざっているときは dept を null にして dept_mixed を true。\n`+parts.join('\n\n');
+}
+function deptByName(storeId,name){
+  if(!name)return null;const n=String(name).trim();
+  return S.depts.find(d=>d.store_id===storeId&&d.name===n)||null;
+}
+// 部門のボタン（押すだけで選べる）
+function deptButtonsHtml(id,storeId,selected,onPick){
+  const ds=S.depts.filter(d=>d.store_id===storeId).sort(sortByOrder);
+  if(!ds.length)return '';
+  return `<input type="hidden" id="${id}" value="${selected||''}"/><div class="seg dept-seg">`+ds.map(d=>`<button type="button" class="${d.id===selected?'active':''}" onclick="${onPick}('${d.id}')">${esc(d.name)}</button>`).join('')+'</div>';
+}
 function catSelectHtml(id,selected){
   return `<select class="input" id="${id}"><option value="">（えらぶ）</option>`+S.cats.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('')+'</select>';
 }
@@ -1056,7 +1101,7 @@ function scanStoreField(){
 function scanSetStore(storeId,i){
   collectScanDocs();const d=SC.docs[+i];if(!d)return;
   d.storeId=storeId;d.storeWhy='';d.storePicked=true;
-  d.department_id=guessDept(storeId,[d.vendor_name,d.memo]);
+  d.department_id=guessDept(storeId,[d.vendor_name,d.memo]);d.deptWhy=d.department_id?'kw':'';d.deptAi=null;d.deptMixed=false;
   renderScan();
 }
 function renderScan(){
@@ -1099,7 +1144,7 @@ function scanDocCard(d,i){
   const confCls=conf>=0.85?'conf-h':conf>=0.65?'conf-m':'conf-l';
   const low=conf<0.75&&!d.skip;
   const isCard=d.type==='card_statement';
-  const deptSel=deptSelectHtml(`d${i}-dept`,d.storeId,d.department_id);
+  const deptSel=deptButtonsHtml(`d${i}-dept`,d.storeId,d.department_id,`scanPickDept.bind(null,${i})`);
   const multi=myStores().length>1;
   return `<div class="doc-card ${d.skip?'skip':''} ${low?'low':''}" id="doc-${i}">
     <div class="doc-head">
@@ -1119,11 +1164,22 @@ function scanDocCard(d,i){
       <div class="field"><div class="label">払い方</div>${paySelectHtml(`d${i}-pay`,d.payment_method)}</div>
     </div>
     <div class="field"><div class="label">何を買った？（メモ）</div><input class="input" id="d${i}-memo" value="${esc(d.memo||'')}" placeholder="例: ガソリン 40L"/></div>
-    <div class="${deptSel?'g2':''}">
-      <div class="field"><div class="label">経費の種類</div>${catSelectHtml(`d${i}-cat`,d.category_id)}</div>
-      ${deptSel?`<div class="field"><div class="label">部門</div>${deptSel}</div>`:''}
-    </div>
+    ${deptSel?`<div class="field ${d.department_id?'':'dept-need'}"><div class="label">部門${d.department_id?'':'（えらんでください）'}</div>${deptSel}${scanDeptNote(d)}</div>`:''}
+    <div class="field"><div class="label">経費の種類</div>${catSelectHtml(`d${i}-cat`,d.category_id)}</div>
   </div>`;
+}
+function scanDeptNote(d){
+  if(d.deptMixed&&!d.department_id)return '<div class="guess-note warn">ちがう部門の物がまざっているようです。金額の多いほうをえらんでください</div>';
+  const n=(SC.deptEx&&SC.deptEx[d.storeId]||[]).length;
+  if(d.department_id&&d.deptWhy==='ai')return `<div class="guess-note">AIのおすすめ（これまでの振り分け ${n}件から学習）。ちがっていたら押して直してください</div>`;
+  if(d.department_id)return '';
+  if(SC.deptEx&&SC.deptEx[d.storeId]&&n<DEPT_MIN_EXAMPLES)return `<div class="guess-note">えらんだ結果をAIが覚えます。あと ${DEPT_MIN_EXAMPLES-n}件 えらぶと、AIがおすすめを出すようになります</div>`;
+  return '';
+}
+function scanPickDept(i,id){
+  collectScanDocs();const d=SC.docs[+i];if(!d)return;
+  d.department_id=d.department_id===id?null:id;d.deptWhy='human';
+  renderScan();
 }
 function scanToggle(i,on){collectScanDocs();SC.docs[i].skip=!on;renderScan()}
 function collectScanDocs(){
@@ -1147,7 +1203,8 @@ async function scanPick(kind){
   try{
     const mine=myStores();
     const hint=mine.length>1?`\n\nこの会社のお店（store_index で、どのお店の経費らしいかを0からの番号で答える。わからなければ null）:\n`+mine.map((s,k)=>`${k}: ${unitLabel(s)}（${s.name}）`).join('\n'):'';
-    const r=await askClaude('read',imgContent(SC.img,SCAN_PROMPT+hint),2500);
+    const ex=await deptExamples(mine.map(s=>s.id));SC.deptEx=ex;
+    const r=await askClaude('read',imgContent(SC.img,SCAN_PROMPT+hint+deptPromptHint(mine,ex)),2500);
     const list=(r.documents||[]).filter(x=>x&&(x.total!=null||x.vendor_name));
     if(!list.length)throw new Error('レシートが見つかりませんでした。もう少し近づいて撮ってみてください。');
     const docs=[];
@@ -1169,7 +1226,10 @@ async function scanPick(kind){
       d.category_id=await guessCategory(d.vendor_name);
       const g=await guessStore(d.vendor_name,[d.memo],typeof x.store_index==='number'?x.store_index:null);
       d.storeId=g.id;d.storeWhy=g.why;
-      d.department_id=guessDept(d.storeId,[d.vendor_name,d.memo]);
+      const ai=(ex[d.storeId]||[]).length>=DEPT_MIN_EXAMPLES?deptByName(d.storeId,x.dept):null;
+      d.deptAi=ai?ai.id:null;d.deptMixed=!!x.dept_mixed;
+      if(ai){d.department_id=ai.id;d.deptWhy='ai'}
+      else{d.department_id=d.deptMixed?null:guessDept(d.storeId,[d.vendor_name,d.memo]);d.deptWhy=d.department_id?'kw':''}
       docs.push(d);
     }
     SC.docs=docs;SC.phase='review';
@@ -1177,7 +1237,7 @@ async function scanPick(kind){
   if(S.page==='scan')renderScan();
 }
 const SCAN_PROMPT=`この写真に写っている書類（レシート・領収書・納品書・請求書・カード明細など）をすべて読み取り、JSONだけを返してください。説明文は不要です。
-{"documents":[{"type":"receipt|delivery_note|invoice|card_statement|other","vendor_name":"店名・会社名","date":"YYYY-MM-DD","total":1234,"tax_8":null,"tax_10":null,"subtotal":null,"payment_method":"現金|カード|振込|アプリ|不明","memo":"主な品目を短く","registration_number":null,"crop":{"x1":0,"y1":0,"x2":1,"y2":1},"confidence":0.9,"store_index":null}]}
+{"documents":[{"type":"receipt|delivery_note|invoice|card_statement|other","vendor_name":"店名・会社名","date":"YYYY-MM-DD","total":1234,"tax_8":null,"tax_10":null,"subtotal":null,"payment_method":"現金|カード|振込|アプリ|不明","memo":"主な品目を短く","registration_number":null,"crop":{"x1":0,"y1":0,"x2":1,"y2":1},"confidence":0.9,"store_index":null,"dept":null,"dept_mixed":false}]}
 ルール:
 - 金額は数字だけ（円・カンマなし）。読めない項目は null（推測しない）
 - 和暦は西暦に直す（令和7年=2025年）
@@ -1185,7 +1245,8 @@ const SCAN_PROMPT=`この写真に写っている書類（レシート・領収�
 - registration_number はインボイス登録番号（T＋13桁）があれば
 - crop は写真全体を1×1とした各書類の位置。書類どうし重ならないように。1件だけなら {"x1":0,"y1":0,"x2":1,"y2":1}
 - confidence は合計金額と日付をどれだけ確実に読めたか（0〜1）
-- store_index はお店の一覧があるときだけ（無ければ null）`;
+- store_index はお店の一覧があるときだけ（無ければ null）
+- dept・dept_mixed は部門の振り分けの説明があるときだけ（無ければ null と false）`;
 async function scanSave(){
   collectScanDocs();
   const list=SC.docs.filter(d=>!d.skip);
@@ -1205,7 +1266,7 @@ async function scanSave(){
         invoice_number:d.registration_number,
         department_id:d.department_id,category_id:d.category_id,
         status:'pending',image_url:up.url,image_path:up.path,
-        ai_confidence:{overall:d.confidence},ai_raw:d.raw,created_by:S.user.username,
+        ai_confidence:{overall:d.confidence,dept_ai:d.deptAi||null,dept_mixed:!!d.deptMixed},ai_raw:d.raw,created_by:S.user.username,
       });
       if(d.vendor_name){learnCategory(d.vendor_name,d.category_id);learnDocType(d.vendor_name,d.type);forgetStoreGuess(d.vendor_name)}
       SC.savedTo[d.storeId]=(SC.savedTo[d.storeId]||0)+1;
