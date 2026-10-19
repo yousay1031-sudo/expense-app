@@ -923,11 +923,21 @@ function deptPromptHint(stores,ex){
   stores.forEach((s,k)=>{
     const ds=S.depts.filter(d=>d.store_id===s.id);
     const list=ex[s.id]||[];
-    if(ds.length<2||list.length<DEPT_MIN_EXAMPLES)return;
+    if(!deptNeed(s.id,ex).ready)return;
     parts.push(`お店${stores.length>1?k:''}「${s.name}」の部門: ${ds.map(d=>d.name).join(' / ')}\nスタッフが振り分けた例:\n`+list.map(x=>`- ${x.v||'?'}「${x.m||'?'}」→ ${x.d}`).join('\n'));
   });
   if(!parts.length)return '';
   return `\n\n部門の振り分け：例を参考に、買った品目から各書類の dept に部門名をそのまま入れる。お店の名前ではなく品目で判断する（同じお店でも品目で部門が変わる）。どちらとも言えないものは null。1枚に別々の部門の品目がまざっているときは dept を null にして dept_mixed を true。\n`+parts.join('\n\n');
+}
+const DEPT_MIN_EACH=2;
+// AIがおすすめを出してよいか：合わせて5件以上、どの部門も2件以上
+function deptNeed(storeId,ex){
+  const ds=S.depts.filter(d=>d.store_id===storeId).sort(sortByOrder);
+  const list=(ex&&ex[storeId])||[];
+  const each=ds.map(d=>({name:d.name,left:Math.max(0,DEPT_MIN_EACH-list.filter(x=>x.d===d.name).length)})).filter(x=>x.left>0);
+  const eachLeft=each.reduce((a,x)=>a+x.left,0);
+  const left=Math.max(DEPT_MIN_EXAMPLES-list.length,eachLeft);
+  return {ready:ds.length>=2&&left===0,left,each,count:list.length};
 }
 function deptByName(storeId,name){
   if(!name)return null;const n=String(name).trim();
@@ -1173,7 +1183,8 @@ function scanDeptNote(d){
   const n=(SC.deptEx&&SC.deptEx[d.storeId]||[]).length;
   if(d.department_id&&d.deptWhy==='ai')return `<div class="guess-note">AIのおすすめ（これまでの振り分け ${n}件から学習）。ちがっていたら押して直してください</div>`;
   if(d.department_id)return '';
-  if(SC.deptEx&&SC.deptEx[d.storeId]&&n<DEPT_MIN_EXAMPLES)return `<div class="guess-note">えらんだ結果をAIが覚えます。あと ${DEPT_MIN_EXAMPLES-n}件 えらぶと、AIがおすすめを出すようになります</div>`;
+  if(SC.deptEx&&SC.deptEx[d.storeId]){const nd=deptNeed(d.storeId,SC.deptEx);
+    if(!nd.ready)return `<div class="guess-note">えらんだ結果をAIが覚えます。あと ${nd.left}件 えらぶと、AIがおすすめを出すようになります${nd.each.length?'（'+nd.each.map(x=>esc(x.name)+' があと'+x.left+'件').join('・')+'）':''}</div>`}
   return '';
 }
 function scanPickDept(i,id){
@@ -1226,7 +1237,7 @@ async function scanPick(kind){
       d.category_id=await guessCategory(d.vendor_name);
       const g=await guessStore(d.vendor_name,[d.memo],typeof x.store_index==='number'?x.store_index:null);
       d.storeId=g.id;d.storeWhy=g.why;
-      const ai=(ex[d.storeId]||[]).length>=DEPT_MIN_EXAMPLES?deptByName(d.storeId,x.dept):null;
+      const ai=deptNeed(d.storeId,ex).ready?deptByName(d.storeId,x.dept):null;
       d.deptAi=ai?ai.id:null;d.deptMixed=!!x.dept_mixed;
       if(ai){d.department_id=ai.id;d.deptWhy='ai'}
       else{d.department_id=d.deptMixed?null:guessDept(d.storeId,[d.vendor_name,d.memo]);d.deptWhy=d.department_id?'kw':''}
