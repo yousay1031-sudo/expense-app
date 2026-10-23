@@ -500,7 +500,7 @@ body::after{width:65vmax;height:65vmax;right:-28vmax;bottom:-25vmax;background:r
   html,body{overflow:visible;height:auto;background:#fff}
   @page{margin:12mm;size:A4}
 }
-.p-page{font-family:'Noto Sans JP',sans-serif;color:#1A1A18;font-size:10pt;line-height:1.6}
+.p-page{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:'Noto Sans JP',sans-serif;color:#1A1A18;font-size:10pt;line-height:1.6}
 .p-title{font-size:18pt;font-weight:700;color:#185FA5;margin-bottom:2mm}
 .p-meta{font-size:9pt;color:#6B6B67;border-bottom:2pt solid #185FA5;padding-bottom:4mm;margin-bottom:5mm}
 .p-sec{margin-bottom:6mm;page-break-inside:avoid}
@@ -514,6 +514,17 @@ body::after{width:65vmax;height:65vmax;right:-28vmax;bottom:-25vmax;background:r
 .p-table td{padding:1.5mm 2mm;border-bottom:0.3pt solid #E0DED8}
 .p-table .r{text-align:right}
 .p-break{page-break-before:always}
+.p-head{display:flex;justify-content:space-between;align-items:flex-start;gap:6mm}
+.p-store{font-size:13pt;font-weight:700}
+.p-store span{font-size:9pt;color:#6B6B67;font-weight:400}
+.p-stamps{display:flex;border:0.5pt solid #9B9B97}
+.p-stamps div{width:20mm;height:22mm;border-left:0.5pt solid #9B9B97;position:relative}
+.p-stamps div:first-child{border-left:none}
+.p-stamps span{display:block;text-align:center;font-size:7.5pt;color:#6B6B67;border-bottom:0.5pt solid #9B9B97;padding:0.5mm 0}
+.p-cols{display:grid;grid-template-columns:1fr 1fr;gap:5mm}
+.p-table .p-tot td{font-weight:700;border-top:0.8pt solid #1A1A18;border-bottom:none;background:#F4F6F9}
+.p-note{font-size:8.5pt;color:#6B6B67;margin-top:1.5mm}
+.p-memo{border:0.5pt solid #D3D1C7;border-radius:3pt;padding:3mm;min-height:18mm;font-size:9.5pt}
 </style>
 </head>
 <body>
@@ -1952,7 +1963,7 @@ function renderDaily(){
   </div>
   <div class="card" id="dy-bal-card"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700">手元に残るお金</span><span class="amount" style="font-size:26px" id="dy-balance">¥0</span></div><div class="hint">売上の合計 − 支出の合計</div></div>
   <div class="field"><div class="label">メモ</div><textarea class="input" id="dy-memo" placeholder="気づいたことなど">${esc(r.memo||'')}</textarea></div>
-  <div class="btn-col"><button class="btn btn-primary" id="dy-save" onclick="saveDaily()">保存する</button><button class="btn btn-secondary" onclick="dailyHistory()">これまでの記録を見る</button></div>`;
+  <div class="btn-col"><button class="btn btn-primary" id="dy-save" onclick="saveDaily()">保存する</button><button class="btn btn-secondary" id="dy-pdf" onclick="dailyPdf()">🖨 この日の日報をPDFにする</button><button class="btn btn-secondary" onclick="dailyHistory()">これまでの記録を見る</button></div>`;
   $('page-daily').innerHTML=h;
   renderArRows();calcDaily();calcCovers();
 }
@@ -2036,6 +2047,76 @@ async function saveDaily(){
     const next=myStores().find(s=>!DY.done.has(s.id));
     if(next&&DY.date===ymd())$('dy-save').insertAdjacentHTML('beforebegin',`<div class="alert alert-s">保存しました。<br><button class="btn btn-primary" style="margin-top:8px" onclick="dailySwitch('${next.id}');$('scroll').scrollTop=0">つぎは「${esc(unitLabel(next))}」の売上を入力 ›</button></div>`);
   }catch(e){toast('保存できませんでした：'+e.message,'err');btn.disabled=false;btn.textContent='保存する'}
+}
+// --- 日報PDF（お店ごとに1枚） ---
+function dyScreenPayload(){
+  return {cash_sales:dyNum('dy-cash'),card_sales:dyNum('dy-card'),app_sales:dyNum('dy-app'),other_income:dyNum('dy-other'),
+    cash_expenses:DY.cashOverride?dyNum('dy-cashexp'):DY.cashAuto,card_expenses:dyNum('dy-cardexp'),other_expenses:dyNum('dy-otherexp'),
+    memo:($('dy-memo')?.value||'').trim()||null};
+}
+function dyDirty(){
+  const r=DY.report;if(!r)return true;const p=dyScreenPayload();
+  return Object.keys(p).some(k=>(p[k]||0)!==(r[k]||0)&&!(k==='memo'&&(p[k]||'')===(r[k]||'')));
+}
+async function dailyPdf(){
+  if(dyDirty()){
+    if(!confirm(DY.report?'直したところがまだ保存されていません。保存してから日報を作りますか？':'この日はまだ保存されていません。保存してから日報を作りますか？'))return;
+    await saveDaily();
+    if(dyDirty())return; // 保存できなかった
+  }
+  const btn=$('dy-pdf');if(btn){btn.disabled=true;btn.textContent='日報を作っています...'}
+  try{
+    const store=storeById(DY.storeId);const biz=bizOfStore(DY.storeId);const r=DY.report;
+    const f=`&store_id=eq.${DY.storeId}&date=eq.${DY.date}`;
+    const [ex,ar,cov]=await Promise.all([
+      db.getAll('expenses?select=vendor_name,memo,total,payment_method,department_id,category_id,status'+f+'&order=created_at,id'),
+      db.get('daily_ar_entries?select=client_name,client_id,amount'+f+'&order=created_at').catch(()=>[]),
+      biz?.track_covers?db.get('restaurant_covers?select=*'+f).catch(()=>[]):Promise.resolve([]),
+    ]);
+    const arName=a=>a.client_name||S.arClients.find(c=>c.id===a.client_id)?.name||'後払い';
+    const arTotal=sum(ar,a=>a.amount||0);
+    const cardFee=Math.round((r.card_sales||0)*(store.card_fee_rate??3.24)/100),appFee=Math.round((r.app_sales||0)*(store.app_fee_rate??1.98)/100);
+    const income=(r.cash_sales||0)+(r.card_sales||0)+(r.app_sales||0)+(r.other_income||0)+arTotal;
+    const expense=(r.cash_expenses||0)+(r.card_expenses||0)+cardFee+appFee+(r.other_expenses||0);
+    const bal=income-expense;
+    const tr=(l,v,bold)=>`<tr${bold?' class="p-tot"':''}><td>${l}</td><td class="r">${yen(v)}</td></tr>`;
+    const exTotal=sum(ex,e=>e.total||0);
+    const c=cov[0];
+    const now=new Date();
+    $('print-frame').innerHTML=`<div class="p-page p-daily">
+      <div class="p-head"><div><div class="p-title">日報</div><div class="p-store">${esc(store.name)}${biz?`<span>（${esc(biz.name)}）</span>`:''}</div></div>
+        <div class="p-stamps"><div><span>作成</span></div><div><span>確認</span></div></div></div>
+      <div class="p-meta">${(d=>d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日（'+'日月火水木金土'[d.getDay()]+'）')(parseYmd(DY.date))} ／ 作成 ${ymd(now)} ${pad(now.getHours())}:${pad(now.getMinutes())} ／ ${esc(S.user?.username||'')}</div>
+      <div class="p-sec"><div class="p-kpis">
+        <div class="p-kpi"><div class="p-kpi-l">売上の合計</div><div class="p-kpi-v" style="color:#185FA5">${yen(income)}</div></div>
+        <div class="p-kpi"><div class="p-kpi-l">支出の合計</div><div class="p-kpi-v" style="color:#8a560f">${yen(expense)}</div></div>
+        <div class="p-kpi"><div class="p-kpi-l">手元に残るお金</div><div class="p-kpi-v" style="color:${bal>=0?'#0F6E56':'#A32D2D'}">${yen(bal)}</div></div></div></div>
+      <div class="p-cols">
+        <div class="p-sec"><div class="p-sec-title">入ってきたお金（売上）</div><table class="p-table">
+          ${tr('現金',r.cash_sales)}${tr('カード',r.card_sales)}${tr('アプリ（PayPayなど）',r.app_sales)}${tr('その他の入金',r.other_income)}
+          ${ar.filter(a=>a.amount).map(a=>tr('後払い：'+esc(arName(a)),a.amount)).join('')}
+          ${tr('売上の合計',income,true)}</table></div>
+        <div class="p-sec"><div class="p-sec-title">出ていったお金（支出）</div><table class="p-table">
+          ${tr('現金の経費',r.cash_expenses)}${tr('カードで払った経費',r.card_expenses)}
+          ${tr(`カード手数料（${store.card_fee_rate??3.24}%）`,cardFee)}${tr(`アプリ手数料（${store.app_fee_rate??1.98}%）`,appFee)}
+          ${tr('その他の支出',r.other_expenses)}${tr('支出の合計',expense,true)}</table></div>
+      </div>
+      ${c&&(c.lunch_covers||c.dinner_covers)?`<div class="p-sec"><div class="p-sec-title">お客さんの数</div><table class="p-table"><tr><th></th><th class="r">組数</th><th class="r">売上</th><th class="r">客単価</th></tr>
+        ${[['ランチ',c.lunch_covers,c.lunch_sales],['ディナー',c.dinner_covers,c.dinner_sales]].map(([l,n,v])=>`<tr><td>${l}</td><td class="r">${n||0}</td><td class="r">${yen(v)}</td><td class="r">${n?yen((v||0)/n):'—'}</td></tr>`).join('')}</table></div>`:''}
+      <div class="p-sec"><div class="p-sec-title">この日に登録した経費（レシートなど ${ex.length}件）</div>
+        ${ex.length?`<table class="p-table"><tr><th>取引先</th><th>買った物</th><th>部門</th><th>種類</th><th>払い方</th><th class="r">金額</th></tr>
+        ${ex.map(e=>`<tr><td>${esc(e.vendor_name||'')}</td><td>${esc(e.memo||'')}</td><td>${esc(deptById(e.department_id)?.name||'')}</td><td>${esc(catById(e.category_id)?.name||'')}</td><td>${esc(e.payment_method||'')}</td><td class="r">${yen(e.total)}</td></tr>`).join('')}
+        <tr class="p-tot"><td colspan="5">合計</td><td class="r">${yen(exTotal)}</td></tr></table>
+        ${ex.some(e=>e.status!=='approved')?'<div class="p-note">※ まだ確認待ちの経費をふくみます</div>':''}`:'<div class="p-note">この日に登録した経費はありません</div>'}</div>
+      <div class="p-sec"><div class="p-sec-title">メモ</div><div class="p-memo">${r.memo?esc(r.memo).replace(/\n/g,'<br>'):'　'}</div></div>
+    </div>`;
+    const oldTitle=document.title;document.title=`日報_${store.name}_${DY.date}`;
+    const restore=()=>{document.title=oldTitle;window.removeEventListener('afterprint',restore)};
+    window.addEventListener('afterprint',restore);setTimeout(restore,60000);
+    toast('印刷の画面を開きます（「PDFに保存」をえらべます）');
+    setTimeout(()=>window.print(),300);
+  }catch(e){toast('日報を作れませんでした：'+e.message,'err')}
+  finally{const b=$('dy-pdf');if(b){b.disabled=false;b.textContent='🖨 この日の日報をPDFにする'}}
 }
 async function copyPrevDay(){
   const has=['dy-cash','dy-card','dy-app'].some(id=>dyNum(id)>0);
