@@ -498,7 +498,9 @@ body::after{width:65vmax;height:65vmax;right:-28vmax;bottom:-25vmax;background:r
   .app,.login,.sheet-bg,.toast,body::before,body::after{display:none!important}
   #print-frame{display:block!important}
   html,body{overflow:visible;height:auto;background:#fff}
-  @page{margin:12mm;size:A4}
+  @page{margin:12mm;size:A4 portrait}
+  .p-daily{page-break-inside:avoid;break-inside:avoid}
+  .p-daily .p-sec{page-break-inside:auto}
 }
 .p-page{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:'Noto Sans JP',sans-serif;color:#1A1A18;font-size:10pt;line-height:1.6}
 .p-title{font-size:18pt;font-weight:700;color:#185FA5;margin-bottom:2mm}
@@ -2049,6 +2051,25 @@ async function saveDaily(){
   }catch(e){toast('保存できませんでした：'+e.message,'err');btn.disabled=false;btn.textContent='保存する'}
 }
 // --- 日報PDF（お店ごとに1枚） ---
+// A4縦1枚に収める：はみ出すときは少し縮小。それでも入らないほど経費が多いときは、
+// 経費の明細を途中まで出して「ほか○件」にまとめる
+function fitOnePage(build,total){
+  const fr=$('print-frame');
+  fr.style.cssText='display:block;position:fixed;left:-10000px;top:0;width:186mm;visibility:hidden';
+  const probe=document.createElement('div');probe.style.cssText='height:273mm;width:1px';fr.appendChild(probe);
+  const H=probe.getBoundingClientRect().height;probe.remove();
+  const MIN=0.7;
+  const measure=limit=>{fr.innerHTML=build(limit);return fr.firstElementChild.getBoundingClientRect().height};
+  let limit=null,h=measure(null);
+  if(h*MIN>H){ // 縮小しても入らない → 明細を減らす
+    let lo=0,hi=total;
+    while(lo<hi){const mid=Math.ceil((lo+hi)/2);if(measure(mid)*MIN<=H)lo=mid;else hi=mid-1}
+    limit=lo;h=measure(limit);
+  }
+  const z=Math.min(1,H/h);
+  fr.style.cssText='';
+  fr.firstElementChild.style.zoom=z<1?String(Math.floor(z*1000)/1000):'';
+}
 function dyScreenPayload(){
   return {cash_sales:dyNum('dy-cash'),card_sales:dyNum('dy-card'),app_sales:dyNum('dy-app'),other_income:dyNum('dy-other'),
     cash_expenses:DY.cashOverride?dyNum('dy-cashexp'):DY.cashAuto,card_expenses:dyNum('dy-cardexp'),other_expenses:dyNum('dy-otherexp'),
@@ -2083,7 +2104,7 @@ async function dailyPdf(){
     const exTotal=sum(ex,e=>e.total||0);
     const c=cov[0];
     const now=new Date();
-    $('print-frame').innerHTML=`<div class="p-page p-daily">
+    const build=limit=>{const shown=limit==null?ex:ex.slice(0,limit);const rest=ex.slice(shown.length);return `<div class="p-page p-daily">
       <div class="p-head"><div><div class="p-title">日報</div><div class="p-store">${esc(store.name)}${biz?`<span>（${esc(biz.name)}）</span>`:''}</div></div>
         <div class="p-stamps"><div><span>作成</span></div><div><span>確認</span></div></div></div>
       <div class="p-meta">${(d=>d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日（'+'日月火水木金土'[d.getDay()]+'）')(parseYmd(DY.date))} ／ 作成 ${ymd(now)} ${pad(now.getHours())}:${pad(now.getMinutes())} ／ ${esc(S.user?.username||'')}</div>
@@ -2105,11 +2126,13 @@ async function dailyPdf(){
         ${[['ランチ',c.lunch_covers,c.lunch_sales],['ディナー',c.dinner_covers,c.dinner_sales]].map(([l,n,v])=>`<tr><td>${l}</td><td class="r">${n||0}</td><td class="r">${yen(v)}</td><td class="r">${n?yen((v||0)/n):'—'}</td></tr>`).join('')}</table></div>`:''}
       <div class="p-sec"><div class="p-sec-title">この日に登録した経費（レシートなど ${ex.length}件）</div>
         ${ex.length?`<table class="p-table"><tr><th>取引先</th><th>買った物</th><th>部門</th><th>種類</th><th>払い方</th><th class="r">金額</th></tr>
-        ${ex.map(e=>`<tr><td>${esc(e.vendor_name||'')}</td><td>${esc(e.memo||'')}</td><td>${esc(deptById(e.department_id)?.name||'')}</td><td>${esc(catById(e.category_id)?.name||'')}</td><td>${esc(e.payment_method||'')}</td><td class="r">${yen(e.total)}</td></tr>`).join('')}
+        ${shown.map(e=>`<tr><td>${esc(e.vendor_name||'')}</td><td>${esc(e.memo||'')}</td><td>${esc(deptById(e.department_id)?.name||'')}</td><td>${esc(catById(e.category_id)?.name||'')}</td><td>${esc(e.payment_method||'')}</td><td class="r">${yen(e.total)}</td></tr>`).join('')}
+        ${rest.length?`<tr><td colspan="5">ほか ${rest.length}件（くわしくは経費の一覧で）</td><td class="r">${yen(sum(rest,e=>e.total||0))}</td></tr>`:''}
         <tr class="p-tot"><td colspan="5">合計</td><td class="r">${yen(exTotal)}</td></tr></table>
         ${ex.some(e=>e.status!=='approved')?'<div class="p-note">※ まだ確認待ちの経費をふくみます</div>':''}`:'<div class="p-note">この日に登録した経費はありません</div>'}</div>
       <div class="p-sec"><div class="p-sec-title">メモ</div><div class="p-memo">${r.memo?esc(r.memo).replace(/\n/g,'<br>'):'　'}</div></div>
-    </div>`;
+    </div>`};
+    fitOnePage(build,ex.length);
     const oldTitle=document.title;document.title=`日報_${store.name}_${DY.date}`;
     const restore=()=>{document.title=oldTitle;window.removeEventListener('afterprint',restore)};
     window.addEventListener('afterprint',restore);setTimeout(restore,60000);
