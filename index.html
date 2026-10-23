@@ -97,6 +97,9 @@ textarea.input{resize:none;min-height:72px}
 .yen-wrap{display:flex;align-items:center;gap:6px}
 .yen-wrap>span{font-weight:700;color:var(--text2)}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:8px}
+.cv-meal{font-size:14px;font-weight:700;margin:4px 0 6px}
+.cv-unit{margin-top:4px}
 .btn{padding:14px;border-radius:var(--r);font-size:16px;font-weight:700;border:none;cursor:pointer;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;text-align:center}
 .btn:disabled{opacity:.4;cursor:not-allowed}
 .btn-primary{background:var(--blue);color:#fff}
@@ -2021,13 +2024,13 @@ function renderDaily(){
   </div>`;
   if(biz?.track_covers){
     const c=DY.covers||{};
+    const cvIn=(id,v,l)=>`<div class="field"><div class="label">${l}</div><input class="input num" id="${id}" inputmode="numeric" value="${v||''}" oninput="calcCovers()"/></div>`;
     h+=`<div class="card"><div class="card-title">お客さんの数</div><div class="hint" style="margin:-6px 0 10px">売上の内訳です（合計には足しません）</div>
-      <div class="g2">
-        <div class="field"><div class="label">ランチ 組数</div><input class="input num" id="cv-lc" inputmode="numeric" value="${c.lunch_covers||''}" oninput="calcCovers()"/></div>
-        <div class="field"><div class="label">ランチ 売上</div><input class="input num" id="cv-ls" inputmode="numeric" value="${c.lunch_sales||''}" oninput="calcCovers()"/></div>
-        <div class="field"><div class="label">ディナー 組数</div><input class="input num" id="cv-dc" inputmode="numeric" value="${c.dinner_covers||''}" oninput="calcCovers()"/></div>
-        <div class="field"><div class="label">ディナー 売上</div><input class="input num" id="cv-ds" inputmode="numeric" value="${c.dinner_sales||''}" oninput="calcCovers()"/></div>
-      </div><div id="cv-unit" class="hint"></div></div>`;
+      <div class="cv-meal">ランチ</div>
+      <div class="g3">${cvIn('cv-lc',c.lunch_covers,'組数')}${cvIn('cv-lg',c.lunch_guests,'人数')}${cvIn('cv-ls',c.lunch_sales,'売上')}</div>
+      <div class="cv-meal">ディナー</div>
+      <div class="g3">${cvIn('cv-dc',c.dinner_covers,'組数')}${cvIn('cv-dg',c.dinner_guests,'人数')}${cvIn('cv-ds',c.dinner_sales,'売上')}</div>
+      <div id="cv-unit" class="cv-unit"></div></div>`;
   }
   h+=`<div class="card">
     <div class="card-title" style="color:var(--expense)">出ていったお金（支出）</div>
@@ -2092,8 +2095,11 @@ function toggleCashOverride(){
 }
 function calcCovers(){
   if(!$('cv-unit'))return;
-  const lc=dyNum('cv-lc'),ls=dyNum('cv-ls'),dc=dyNum('cv-dc'),ds=dyNum('cv-ds');
-  $('cv-unit').innerHTML=`客単価（1組あたり）：ランチ <b>${lc?yen(ls/lc):'—'}</b> ・ ディナー <b>${dc?yen(ds/dc):'—'}</b>`;
+  const lc=dyNum('cv-lc'),lg=dyNum('cv-lg'),ls=dyNum('cv-ls'),dc=dyNum('cv-dc'),dg=dyNum('cv-dg'),ds=dyNum('cv-ds');
+  const per=(v,n)=>n?yen(v/n):'—';
+  $('cv-unit').innerHTML=`<div class="kv"><span>この日の合計</span><span>${lc+dc}組 ・ ${lg+dg}人</span></div>
+    <div class="kv"><span>ランチ（1組／1人あたり）</span><span>${per(ls,lc)} ／ ${per(ls,lg)}</span></div>
+    <div class="kv"><span>ディナー（1組／1人あたり）</span><span>${per(ds,dc)} ／ ${per(ds,dg)}</span></div>`;
 }
 // --- 保存 ---
 async function saveDaily(){
@@ -2113,7 +2119,7 @@ async function saveDaily(){
     const ar=DY.ar.filter(a=>a.amount>0).map(a=>({daily_report_id:id,store_id:DY.storeId,date:DY.date,client_id:a.client_id||null,client_name:a.client_name||null,amount:a.amount}));
     if(ar.length)await db.postMany('daily_ar_entries',ar);
     if(bizOfStore(DY.storeId)?.track_covers&&$('cv-lc')){
-      const cp={store_id:DY.storeId,date:DY.date,lunch_covers:dyNum('cv-lc'),lunch_sales:dyNum('cv-ls'),dinner_covers:dyNum('cv-dc'),dinner_sales:dyNum('cv-ds'),updated_at:new Date().toISOString()};
+      const cp={store_id:DY.storeId,date:DY.date,lunch_covers:dyNum('cv-lc'),lunch_guests:dyNum('cv-lg'),lunch_sales:dyNum('cv-ls'),dinner_covers:dyNum('cv-dc'),dinner_guests:dyNum('cv-dg'),dinner_sales:dyNum('cv-ds'),updated_at:new Date().toISOString()};
       const ce=await db.get(`restaurant_covers?select=id&store_id=eq.${DY.storeId}&date=eq.${DY.date}`);
       if(ce.length)await db.patch('restaurant_covers?id=eq.'+ce[0].id,cp);else await db.post('restaurant_covers',cp);
     }
@@ -2198,8 +2204,8 @@ async function dailyPdf(){
           ${tr(`カード手数料（${store.card_fee_rate??3.24}%）`,cardFee)}${tr(`アプリ手数料（${store.app_fee_rate??1.98}%）`,appFee)}
           ${tr('その他の支出',r.other_expenses)}${tr('支出の合計',expense,true)}</table></div>
       </div>
-      ${c&&(c.lunch_covers||c.dinner_covers)?`<div class="p-sec"><div class="p-sec-title">お客さんの数</div><table class="p-table"><tr><th></th><th class="r">組数</th><th class="r">売上</th><th class="r">客単価</th></tr>
-        ${[['ランチ',c.lunch_covers,c.lunch_sales],['ディナー',c.dinner_covers,c.dinner_sales]].map(([l,n,v])=>`<tr><td>${l}</td><td class="r">${n||0}</td><td class="r">${yen(v)}</td><td class="r">${n?yen((v||0)/n):'—'}</td></tr>`).join('')}</table></div>`:''}
+      ${c&&(c.lunch_covers||c.dinner_covers||c.lunch_guests||c.dinner_guests)?`<div class="p-sec"><div class="p-sec-title">お客さんの数</div><table class="p-table"><tr><th></th><th class="r">組数</th><th class="r">人数</th><th class="r">売上</th><th class="r">1組あたり</th><th class="r">1人あたり</th></tr>
+        ${[['ランチ',c.lunch_covers,c.lunch_guests,c.lunch_sales],['ディナー',c.dinner_covers,c.dinner_guests,c.dinner_sales],['合計',(c.lunch_covers||0)+(c.dinner_covers||0),(c.lunch_guests||0)+(c.dinner_guests||0),(c.lunch_sales||0)+(c.dinner_sales||0)]].map(([l,n,g,v],k)=>`<tr${k===2?' class="p-tot"':''}><td>${l}</td><td class="r">${n||0}組</td><td class="r">${g||0}人</td><td class="r">${yen(v)}</td><td class="r">${n?yen((v||0)/n):'—'}</td><td class="r">${g?yen((v||0)/g):'—'}</td></tr>`).join('')}</table></div>`:''}
       <div class="p-sec"><div class="p-sec-title">この日に登録した経費（レシートなど ${ex.length}件）</div>
         ${ex.length?`<table class="p-table"><tr><th>取引先</th><th>買った物</th><th>部門</th><th>種類</th><th>払い方</th><th class="r">金額</th></tr>
         ${shown.map(e=>`<tr><td>${esc(e.vendor_name||'')}</td><td>${esc(e.memo||'')}</td><td>${esc(deptById(e.department_id)?.name||'')}</td><td>${esc(catById(e.category_id)?.name||'')}</td><td>${esc(e.payment_method||'')}</td><td class="r">${yen(e.total)}</td></tr>`).join('')}
@@ -2411,11 +2417,17 @@ async function reportCovers(store){
   const m=RP.month;
   try{
     const cv=await db.get(`restaurant_covers?select=*&store_id=eq.${store.id}&date=gte.${monthStart(m)}&date=lte.${monthEnd(m)}`);
-    const lc=sum(cv,c=>c.lunch_covers||0),ls=sum(cv,c=>c.lunch_sales||0),dc=sum(cv,c=>c.dinner_covers||0),ds=sum(cv,c=>c.dinner_sales||0);
-    if($('rp-covers'))$('rp-covers').innerHTML=`<div class="card"><div class="card-title">お客さんの数（${cv.length}日分）</div>${cv.length?'':'<div class="hint">日計表で「お客さんの数」を入れると出ます</div>'}
-      <div class="kv"><span>ランチ</span><span>${lc}組${lc?`（1組あたり ${yen(ls/lc)}）`:''}</span></div>
-      <div class="kv"><span>ディナー</span><span>${dc}組${dc?`（1組あたり ${yen(ds/dc)}）`:''}</span></div>
-      <div class="kv"><span>1日平均</span><span>${cv.length?Math.round((lc+dc)/cv.length):0}組</span></div></div>`;
+    const lc=sum(cv,c=>c.lunch_covers||0),lg=sum(cv,c=>c.lunch_guests||0),ls=sum(cv,c=>c.lunch_sales||0);
+    const dc=sum(cv,c=>c.dinner_covers||0),dg=sum(cv,c=>c.dinner_guests||0),ds=sum(cv,c=>c.dinner_sales||0);
+    const n=cv.length;const per=(v,k)=>k?yen(v/k):'—';
+    if($('rp-covers'))$('rp-covers').innerHTML=`<div class="card"><div class="card-title">お客さんの数（${n}日分）</div>${n?'':'<div class="hint">日計表で「お客さんの数」を入れると出ます</div>'}
+      <div class="kv"><span>合計</span><span>${lc+dc}組 ・ ${lg+dg}人</span></div>
+      <div class="kv"><span>ランチ</span><span>${lc}組 ・ ${lg}人</span></div>
+      <div class="kv"><span>　1組／1人あたり</span><span>${per(ls,lc)} ／ ${per(ls,lg)}</span></div>
+      <div class="kv"><span>ディナー</span><span>${dc}組 ・ ${dg}人</span></div>
+      <div class="kv"><span>　1組／1人あたり</span><span>${per(ds,dc)} ／ ${per(ds,dg)}</span></div>
+      <div class="kv"><span>1日平均</span><span>${n?Math.round((lc+dc)/n):0}組 ・ ${n?Math.round((lg+dg)/n):0}人</span></div>
+      ${lc+dc?`<div class="kv"><span>1組の平均人数</span><span>${((lg+dg)/(lc+dc)).toFixed(1)}人</span></div>`:''}</div>`;
   }catch(e){}
 }
 // --- 日ごと ---
@@ -3010,7 +3022,7 @@ function editBiz(id){
     <div class="field"><div class="label">事業の名前</div><input class="input" id="bz-name" value="${esc(b.name||'')}" placeholder="例: 飲食"/></div>
     ${iconColorFields('bz',b.icon,b.color)}
     <div class="label" style="margin-bottom:6px">この事業で使う機能</div>
-    <label class="toggle"><div class="toggle-text"><div class="toggle-title">お客さんの数を記録する</div><div class="toggle-sub">飲食向け。日計表にランチ・ディナーの組数が出ます</div></div><input type="checkbox" id="bz-covers" ${b.track_covers?'checked':''}/></label>
+    <label class="toggle"><div class="toggle-text"><div class="toggle-title">お客さんの数を記録する</div><div class="toggle-sub">飲食向け。日計表にランチ・ディナーの組数・人数が出ます</div></div><input type="checkbox" id="bz-covers" ${b.track_covers?'checked':''}/></label>
     <label class="toggle"><div class="toggle-text"><div class="toggle-title">車両の在庫を管理する</div><div class="toggle-sub">車販向け。車ごとの仕入れ・経費・もうけ、古物台帳</div></div><input type="checkbox" id="bz-veh" ${b.track_vehicles?'checked':''}/></label>
     <div class="field"><div class="label">ならび順</div><input class="input num" id="bz-order" inputmode="numeric" value="${b.sort_order??0}"/><div class="hint">小さい数字ほど上に出ます</div></div>
     <div class="btn-col"><button class="btn btn-primary" onclick="saveBiz('${id||''}')">保存する</button>
