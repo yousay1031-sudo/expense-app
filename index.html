@@ -622,7 +622,8 @@ const LS={
 };
 let SB_URL=LS.get('sb_url')||DEFAULT_URL;
 let SB_KEY=LS.get('sb_key')||DEFAULT_KEY;
-let API_KEY=LS.get('api_key')||'';
+// 前の版で端末に残していたAIキーは消す（キーはサーバー側だけに置く）
+LS.del('api_key');LS.del('session_user');
 // AIモデル（新しい順に試し、使えないものは自動で次へ）
 const MODELS={
   read:(LS.get('model_read')||'claude-sonnet-5-5,claude-sonnet-4-5,claude-sonnet-4-20250514').split(',').map(s=>s.trim()).filter(Boolean),
@@ -632,6 +633,7 @@ const MODELS={
 // ===== STATE =====
 const S={
   user:null,            // ログイン中のユーザー
+  aiReady:false,        // AIのキーがサーバーに設定されているか
   businesses:[], stores:[], depts:[], cats:[],
   arClients:[], cards:[],
   ctx:{type:'all',id:null}, // 'all' | 'biz' | 'store'
@@ -724,6 +726,7 @@ function motionInit(){
       m.addedNodes.forEach(n=>{if(n.nodeType===1)added.push(n)});
     });
     if(!added.length)return;
+    added.forEach(n=>{if(n.querySelector&&(n.hasAttribute('data-sign')||n.querySelector('[data-sign]')))hydrateImages(n.parentNode||n)});
     if(replacedSkel||performance.now()<MOTION.until){
       // 同じ描き直しで重複しないよう、いちばん外側だけ
       const top=added.filter(n=>!added.some(o=>o!==n&&o.contains(n)));
@@ -769,13 +772,59 @@ function skel(kind){
   return `<div class="skel" aria-busy="true" aria-label="読み込んでいます">${h}</div>`;
 }
 
+// ===== ログイン（Supabase Auth） =====
+// パスワードは Supabase Auth に暗号化して保存。アプリの表にはパスワードを置かない。
+// ログイン用のメールは「ユーザーID@keihi.local」（画面には出さない）
+const AUTH={access:null,refresh:null,exp:0,uid:null,_refreshing:null};
+function authLoad(){try{const j=JSON.parse(LS.get('sb_session')||'null');if(j&&j.refresh){Object.assign(AUTH,{access:j.access,refresh:j.refresh,exp:j.exp||0,uid:j.uid})}}catch(e){}}
+function authSave(){LS.set('sb_session',JSON.stringify({access:AUTH.access,refresh:AUTH.refresh,exp:AUTH.exp,uid:AUTH.uid}))}
+function authClear(){AUTH.access=AUTH.refresh=AUTH.uid=null;AUTH.exp=0;LS.del('sb_session')}
+function authSet(j){AUTH.access=j.access_token;AUTH.refresh=j.refresh_token;AUTH.exp=Date.now()+(j.expires_in||3600)*1000;AUTH.uid=j.user?.id||AUTH.uid;authSave()}
+async function authCall(grant,body){
+  const r=await fetch(SB_URL+'/auth/v1/token?grant_type='+grant,{method:'POST',headers:{'apikey':SB_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error_description||j.msg||j.message||('ログインできませんでした '+r.status));
+  return j;
+}
+async function authLogin(userId,password){authSet(await authCall('password',{email:userId+'@keihi.local',password}))}
+async function authRefresh(){
+  if(!AUTH.refresh)throw new Error('ログインしてください');
+  if(!AUTH._refreshing)AUTH._refreshing=authCall('refresh_token',{refresh_token:AUTH.refresh}).then(j=>{authSet(j)}).finally(()=>{AUTH._refreshing=null});
+  return AUTH._refreshing;
+}
+async function authToken(){
+  if(!AUTH.access)return null;
+  if(Date.now()>AUTH.exp-60000){try{await authRefresh()}catch(e){authExpired();throw e}}
+  return AUTH.access;
+}
+function authExpired(){
+  // 長いあいだ使わずにログインが切れたとき
+  if(!S.user)return;
+  authClear();S.user=null;resetUserState();
+  $('app').classList.add('hidden');$('login').classList.remove('hidden');$('login-pass').value='';
+  loadLoginUsers();
+  const err=$('login-err');err.textContent='しばらく使わなかったので、もう一度ログインしてください';err.classList.remove('hidden');
+}
+async function authLogout(){
+  const t=AUTH.access;authClear();
+  if(t)fetch(SB_URL+'/auth/v1/logout',{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+t}}).catch(()=>{});
+}
+
 // ===== SUPABASE =====
-function sbH(extra){return Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},extra||{})}
-async function sbReq(method,path,body,extra){
-  const r=await fetch(SB_URL+'/rest/v1/'+path,{method,headers:sbH(extra),body:body===undefined?undefined:JSON.stringify(body)});
+async function sbHeaders(extra){const t=await authToken();return Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+(t||SB_KEY),'Content-Type':'application/json','Prefer':'return=representation'},extra||{})}
+async function sbReq(method,path,body,extra,retried){
+  const r=await fetch(SB_URL+'/rest/v1/'+path,{method,headers:await sbHeaders(extra),body:body===undefined?undefined:JSON.stringify(body)});
+  if(r.status===401&&AUTH.refresh&&!retried){try{await authRefresh()}catch(e){authExpired();throw new Error('ログインしてください')}return sbReq(method,path,body,extra,true)}
   if(!r.ok){let t=await r.text();try{t=JSON.parse(t).message||t}catch(e){}throw new Error(t)}
   if(r.status===204)return null;
   const txt=await r.text();return txt?JSON.parse(txt):null;
+}
+// サーバーの関数（Edge Function）を呼ぶ
+async function callFn(name,body){
+  const t=await authToken();
+  const r=await fetch(SB_URL+'/functions/v1/'+name,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+(t||SB_KEY),'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+  const j=await r.json().catch(()=>({}));
+  return {ok:r.ok,status:r.status,data:j};
 }
 const db={
   get:p=>sbReq('GET',p),
@@ -792,6 +841,7 @@ const db={
     return out;
   },
   del:p=>sbReq('DELETE',p),
+  rpc:(fn,args)=>sbReq('POST','rpc/'+fn,args||{}),
 };
 // 店舗IDのリストで絞り込むクエリ片
 function inStores(ids,col='store_id'){return ids.length?`&${col}=in.(${ids.join(',')})`:`&${col}=is.null&${col}=not.is.null`}
@@ -799,12 +849,40 @@ async function uploadImage(blob,folder){
   try{
     const path=(folder||'r')+'/'+Date.now()+'_'+uid()+'.jpg';
     const ctrl=new AbortController();const tm=setTimeout(()=>ctrl.abort(),15000);
+    const t=await authToken();
     const r=await fetch(SB_URL+'/storage/v1/object/receipts/'+path,{method:'POST',signal:ctrl.signal,
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':blob.type||'image/jpeg','x-upsert':'true'},body:blob});
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+(t||SB_KEY),'Content-Type':blob.type||'image/jpeg','x-upsert':'true'},body:blob});
     clearTimeout(tm);
     if(!r.ok)return {url:null,path:null};
     return {url:SB_URL+'/storage/v1/object/public/receipts/'+path,path:'receipts/'+path};
   }catch(e){return {url:null,path:null}}
+}
+// 写真の保存場所はログインした人しか見られないので、見るときに1時間だけ使えるURLをもらう
+const _signed={};
+function imgPathOf(urlOrPath){
+  if(!urlOrPath)return null;const s=String(urlOrPath);
+  const m=s.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/receipts\/([^?]+)/);if(m)return decodeURIComponent(m[1]);
+  return s.replace(/^receipts\//,'');
+}
+async function signedImgUrl(urlOrPath){
+  const p=imgPathOf(urlOrPath);if(!p)return null;
+  const c=_signed[p];if(c&&c.until>Date.now())return c.url;
+  try{
+    const t=await authToken();
+    const r=await fetch(SB_URL+'/storage/v1/object/sign/receipts/'+p.split('/').map(encodeURIComponent).join('/'),{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+(t||SB_KEY),'Content-Type':'application/json'},body:JSON.stringify({expiresIn:3600})});
+    if(!r.ok)return null;const j=await r.json();
+    const url=SB_URL+'/storage/v1'+(j.signedURL||j.signedUrl);
+    _signed[p]={url,until:Date.now()+50*60000};return url;
+  }catch(e){return null}
+}
+// data-sign="..." の付いた画像・リンクに、見られるURLを入れる
+function hydrateImages(root){
+  (root||document).querySelectorAll('[data-sign]').forEach(async el=>{
+    const src=el.getAttribute('data-sign');el.removeAttribute('data-sign');
+    const u=await signedImgUrl(src);
+    if(!u){if(el.tagName==='IMG')el.replaceWith(Object.assign(document.createElement('div'),{className:'hint',textContent:'写真を開けませんでした'}));return}
+    if(el.tagName==='IMG')el.src=u;else el.href=u;
+  });
 }
 
 // ===== LOOKUPS =====
@@ -904,10 +982,9 @@ function allTree(){
 async function loadLoginUsers(){
   const sel=$('login-user');
   try{
-    const users=await db.get('app_users?select=id,username,role&order=username.asc');
-    users.sort((a,b)=>(a.role==='owner'?0:1)-(b.role==='owner'?0:1));
-    sel.innerHTML=users.length?users.map(u=>`<option value="${esc(u.username)}">${esc(u.username)}${u.role==='owner'?'（オーナー）':''}</option>`).join(''):'<option value="">ユーザーがいません</option>';
-    const last=LS.get('last_login');if(last&&users.some(u=>u.username===last))sel.value=last;
+    const users=await db.rpc('keihi_login_users');
+    sel.innerHTML=users.length?users.map(u=>`<option value="${esc(u.id)}">${esc(u.username)}${u.role==='owner'?'（オーナー）':''}</option>`).join(''):'<option value="">ユーザーがいません</option>';
+    const last=LS.get('last_login');const hit=users.find(u=>u.id===last||u.username===last);if(hit)sel.value=hit.id;
     $('login-hint').textContent='';
   }catch(e){
     sel.innerHTML='<option value="">接続できません</option>';
@@ -915,17 +992,19 @@ async function loadLoginUsers(){
   }
 }
 async function doLogin(){
-  const name=$('login-user').value,pass=$('login-pass').value;
+  const id=$('login-user').value,pass=$('login-pass').value;
   const err=$('login-err');err.classList.add('hidden');
-  if(!name||!pass){err.textContent='名前とパスワードを入れてください';err.classList.remove('hidden');return}
+  if(!id||!pass){err.textContent='名前とパスワードを入れてください';err.classList.remove('hidden');return}
   $('login-btn').disabled=true;
+  let user=null;
   try{
-    const res=await db.get(`app_users?select=*&username=eq.${encodeURIComponent(name)}&password=eq.${encodeURIComponent(pass)}`);
+    await authLogin(id,pass);
+    const res=await db.get('app_users?select=id,username,role,store_id,store_ids,default_scan_store_id&id=eq.'+AUTH.uid);
     if(!res.length)throw new Error('ng');
-    LS.set('last_login',name);LS.set('session_user',res[0].id);
-    await startApp(res[0]);
-  }catch(e){err.textContent='名前かパスワードがちがいます';err.classList.remove('hidden')}
+    user=res[0];LS.set('last_login',id);
+  }catch(e){authClear();err.textContent=/fetch|network/i.test(e.message)?'つながりません。通信状況を確かめてください':'名前かパスワードがちがいます';err.classList.remove('hidden')}
   $('login-btn').disabled=false;
+  if(user){$('login-pass').value='';await startApp(user)}
 }
 // 前の人の画面・絞り込み・入力途中のデータを全部消す（次の人に見えないように）
 function resetUserState(){
@@ -942,7 +1021,7 @@ function resetUserState(){
   Object.keys(_storeGuess).forEach(k=>delete _storeGuess[k]);
 }
 function doLogout(){
-  LS.del('session_user');S.user=null;resetUserState();
+  authLogout();S.user=null;resetUserState();
   $('app').classList.add('hidden');$('login').classList.remove('hidden');$('login-pass').value='';
   closeSheet();loadLoginUsers();
 }
@@ -965,22 +1044,21 @@ async function startApp(user){
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-home'));
   $('page-home').innerHTML='<div class="skel"><div class="sk sk-title" style="width:70%;height:26px;margin-top:4px"></div><div class="sk sk-line" style="width:45%;margin-bottom:18px"></div></div>'+skel('home');
   try{await loadMasters()}catch(e){toast('データの読み込みに失敗しました','err')}
-  // AIキー：この端末に無ければDBの共有キーを使う
-  if(!apiKeyOk()){
-    try{const r=await db.get('app_settings?select=value&key=eq.anthropic_api_key');if(r.length&&r[0].value){API_KEY=r[0].value;LS.set('api_key',API_KEY)}}catch(e){}
-  }
+  // AIのキーがサーバーに入っているか（キーそのものは端末に来ない）
+  try{S.aiReady=!!(await db.rpc('keihi_ai_ready'))}catch(e){S.aiReady=false}
   restoreCtx();
   loadArClients();
   go('home');
 }
 async function resumeSession(){
-  const id=LS.get('session_user');
-  if(!id){loadLoginUsers();return}
+  authLoad();
+  if(!AUTH.refresh){loadLoginUsers();return}
   try{
-    const r=await db.get('app_users?select=*&id=eq.'+id);
+    if(Date.now()>AUTH.exp-60000)await authRefresh();
+    const r=await db.get('app_users?select=id,username,role,store_id,store_ids,default_scan_store_id&id=eq.'+AUTH.uid);
     if(r.length){await startApp(r[0]);return}
   }catch(e){}
-  LS.del('session_user');loadLoginUsers();
+  authClear();loadLoginUsers();
 }
 
 // ===== HEADER =====
@@ -1019,23 +1097,22 @@ function storePills(current,fn,mark){
 }
 
 // ===== AI (Claude) =====
-function apiKeyOk(){return /^sk-ant-/.test(API_KEY||'')&&(API_KEY||'').length>20}
-async function askClaude(tier,content,maxTokens){
-  if(!apiKeyOk())throw new Error('AI読み取りキーが未設定です');
+function apiKeyOk(){return !!S.aiReady}
+// AIはサーバーの中継（keihi-ai）を通す。キーは端末に置かない
+async function askClaude(tier,content,maxTokens,testKey){
+  if(!testKey&&!apiKeyOk())throw new Error('AI読み取りキーが未設定です');
   let lastErr=null;
   for(const model of MODELS[tier]){
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model,max_tokens:maxTokens||1500,messages:[{role:'user',content}]})});
+    const res=await callFn('keihi-ai',{model,max_tokens:maxTokens||1500,messages:[{role:'user',content}],test_key:testKey||undefined});
     if(res.ok){
-      const d=await res.json();
+      const d=res.data;
       const txt=(d.content||[]).map(c=>c.text||'').join('');
       const m=txt.replace(/```json|```/g,'').match(/[\[{][\s\S]*[\]}]/);
       if(!m)throw new Error('AIの返事を読めませんでした');
       return JSON.parse(m[0]);
     }
-    const e=await res.json().catch(()=>({}));
-    lastErr=new Error(e.error?.message||('AIエラー '+res.status));
+    const e=res.data||{};
+    lastErr=new Error(e.error?.message||(typeof e.error==='string'?e.error:'')||('AIエラー '+res.status));
     // モデルが無い/使えないときだけ次のモデルへ
     if(!(res.status===404||(res.status===400&&/model/i.test(e.error?.message||''))))break;
   }
@@ -1046,11 +1123,10 @@ function imgContent(dataUrl,text){
   return [{type:'image',source:{type:'base64',media_type:mime,data:dataUrl.split(',')[1]}},{type:'text',text}];
 }
 async function saveApiKey(k){
-  API_KEY=k;LS.set('api_key',k);
-  try{const ex=await db.get('app_settings?select=key&key=eq.anthropic_api_key');
-    if(ex.length)await db.patch('app_settings?key=eq.anthropic_api_key',{value:k,updated_at:new Date().toISOString()});
-    else await db.post('app_settings',{key:'anthropic_api_key',value:k});
-  }catch(e){}
+  const ex=await db.get('app_settings?select=key&key=eq.anthropic_api_key');
+  if(ex.length)await db.patch('app_settings?key=eq.anthropic_api_key',{value:k,updated_at:new Date().toISOString()});
+  else await db.post('app_settings',{key:'anthropic_api_key',value:k});
+  S.aiReady=true;
 }
 
 // ===== IMAGE =====
@@ -1144,7 +1220,7 @@ async function fetchReservations(store,date){
   if(!store?.carwash_store_id)return null;
   try{
     const r=await fetch(SB_URL+`/rest/v1/reservations?select=id,customer_name,service_name,total_price,payment_method,start_time,status&store_id=eq.${store.carwash_store_id}&reservation_date=eq.${date||ymd()}&order=start_time.asc`,
-      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Accept-Profile':'carwash'}});
+      {headers:await sbHeaders({'Accept-Profile':'carwash'})});
     if(!r.ok)return null;
     const rows=await r.json();
     const done=rows.filter(x=>x.status==='completed'||x.status==='paid');
@@ -1823,7 +1899,7 @@ async function openExpense(id){
   S.editExp=e;
   const storeSel=storeSelectHtml('ex-store',e.store_id,{all:isOwner(),onchange:'exStoreChanged()'});
   openSheet(`<div class="sheet-title">経費をなおす</div><div class="sheet-sub">${esc(storeName(e.store_id))} ・ 登録 ${esc((e.created_at||'').slice(0,10))}${e.created_by?' ・ '+esc(e.created_by):''}</div>
-    ${e.image_url?`<a href="${esc(e.image_url)}" target="_blank" rel="noopener"><img class="doc-thumb" src="${esc(e.image_url)}" alt="レシートの写真"/></a>`:''}
+    ${e.image_url?`<a data-sign="${esc(e.image_url)}" target="_blank" rel="noopener"><img class="doc-thumb" data-sign="${esc(e.image_url)}" alt="レシートの写真"/></a>`:''}
     <div class="field"><div class="label">金額</div><div class="yen-wrap"><span>¥</span><input class="input big num" id="ex-total" inputmode="numeric" value="${e.total??''}"/></div></div>
     <div class="field"><div class="label">お店・取引先</div><input class="input" id="ex-vendor" value="${esc(e.vendor_name||'')}"/></div>
     <div class="g2"><div class="field"><div class="label">日付</div><input class="input" type="date" id="ex-date" value="${esc(e.date||'')}"/></div>
@@ -2835,7 +2911,7 @@ function renderInvoices(){
       <div style="display:flex;justify-content:space-between;gap:8px"><div class="row-main"><div class="row-title">${esc(i.vendor_name)}</div><div class="row-sub">${esc(i.invoice_date||'日付なし')}${i.period_start?` ・ ${esc(i.period_start)}〜${esc(i.period_end||'')}`:''}</div></div><div class="row-right"><div class="amount">${yen(i.total_amount)}</div>${badge}</div></div>
       ${r.st!=='ok'?`<div class="hint" style="margin-top:6px">${r.st==='diff'?`登録した経費の合計 ${yen(r.t)}（差 ${yen(Math.abs((i.total_amount||0)-r.t))}）`:'この取引先の経費がこの期間に登録されていません。入れ忘れかも？'}</div>`:''}
       ${i.due_date?`<div class="hint" style="color:${over?'var(--red)':''}">支払い期限 ${esc(i.due_date)}${over?' ・ 期限をすぎています':''}</div>`:''}
-      <div style="display:flex;gap:8px;margin-top:10px">${i.image_url?`<a class="btn btn-secondary btn-small" href="${esc(i.image_url)}" target="_blank" rel="noopener" style="text-decoration:none">写真</a>`:''}<button class="btn btn-secondary btn-small" onclick="deleteInvoice('${i.id}')">消す</button></div>
+      <div style="display:flex;gap:8px;margin-top:10px">${i.image_url?`<a class="btn btn-secondary btn-small" data-sign="${esc(i.image_url)}" target="_blank" rel="noopener" style="text-decoration:none">写真</a>`:''}<button class="btn btn-secondary btn-small" onclick="deleteInvoice('${i.id}')">消す</button></div>
     </div>`;}).join(''):'<div class="empty">まだ請求書がありません</div>';
   $('page-invoices').innerHTML=h;
 }
@@ -3037,7 +3113,7 @@ function editUser(id){
   const self=id===S.user.id;
   openSheet(`<div class="sheet-title">${id?'ユーザーを編集':'ユーザーを追加'}</div><div class="sheet-sub">ログインのときに使います</div>
     <div class="field"><div class="label">名前（ログイン名）</div><input class="input" id="us-name" value="${esc(u.username||'')}" autocapitalize="none"/></div>
-    <div class="field"><div class="label">パスワード${id?'（変えるときだけ入力）':''}</div><input class="input" id="us-pass" type="text" autocomplete="off" placeholder="${id?'そのまま':'パスワード'}"/></div>
+    <div class="field"><div class="label">パスワード${id?'（変えるときだけ入力）':''}</div><input class="input" id="us-pass" type="text" autocomplete="off" placeholder="${id?'そのまま':'6文字以上'}"/><div class="hint">6文字以上。暗号化して保存するので、あとから見ることはできません</div></div>
     <div class="field"><div class="label">権限</div><div class="seg" id="us-role" style="margin-bottom:0">${[['staff','スタッフ'],['owner','オーナー']].map(([k,l])=>`<button class="${u.role===k?'active':''}" data-v="${k}" ${self?'disabled':''} onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active');$('us-stores').classList.toggle('hidden','${k}'==='owner')">${l}</button>`).join('')}</div></div>
     <div id="us-stores" class="${u.role==='owner'?'hidden':''}"><div class="label">担当するお店（いくつでも）</div><div class="check-list" style="margin-bottom:14px">${allTree().map(g=>`<div class="check-group-title">${esc(g.biz?(g.biz.icon||'')+' '+g.biz.name:'事業なし')}</div>`+g.stores.map(s=>`<label><input type="checkbox" class="us-st" value="${s.id}" ${ids.includes(s.id)?'checked':''}/>${esc(s.icon||'')} ${esc(s.name)}</label>`).join('')).join('')}</div></div>
     <div class="btn-col"><button class="btn btn-primary" onclick="saveUser('${id||''}')">保存する</button>${id&&!self?`<button class="btn btn-danger" onclick="deleteUser('${id}')">このユーザーを消す</button>`:''}<button class="btn btn-secondary" onclick="closeSheet()">やめる</button></div>`);
@@ -3045,23 +3121,25 @@ function editUser(id){
 async function saveUser(id){
   const role=$('us-role').querySelector('.active')?.dataset.v||'staff';
   const storeIds=[...document.querySelectorAll('.us-st:checked')].map(x=>x.value);
-  const p={username:$('us-name').value.trim(),role,store_ids:role==='owner'?[]:storeIds,store_id:role==='owner'?null:(storeIds[0]||null)};
+  const p={username:$('us-name').value.trim(),role,store_ids:role==='owner'?[]:storeIds};
   const pass=$('us-pass').value.trim();if(pass)p.password=pass;
   if(!p.username){toast('名前を入れてください','err');return}
   if(!id&&!pass){toast('パスワードを入れてください','err');return}
+  if(pass&&pass.length<6){toast('パスワードは6文字以上にしてください','err');return}
   if(role==='staff'&&!storeIds.length){toast('担当するお店を1つ以上えらんでください','err');return}
   if(S.users.some(u=>u.username===p.username&&u.id!==id)){toast('同じ名前のユーザーがいます','err');return}
-  try{
-    if(id)await db.patch('app_users?id=eq.'+id,p);else await db.post('app_users',p);
-    if(id===S.user.id){Object.assign(S.user,p);restoreCtx()}
-    closeSheet();toast('保存しました','ok');renderUsers();
-  }catch(e){toast('保存できませんでした：'+e.message,'err')}
+  const r=await callFn('keihi-admin',Object.assign({action:id?'update':'create',id:id||undefined},p));
+  if(!r.ok){toast('保存できませんでした：'+(r.data?.error||r.status),'err');return}
+  if(id===S.user.id&&r.data.user){Object.assign(S.user,r.data.user);restoreCtx()}
+  closeSheet();toast('保存しました','ok');renderUsers();
 }
 async function deleteUser(id){
   const u=S.users.find(x=>x.id===id);
   if(u.role==='owner'&&S.users.filter(x=>x.role==='owner').length<=1){toast('オーナーが1人もいなくなるので消せません','err');return}
   if(!confirm(`「${u.username}」を消しますか？`))return;
-  try{await db.del('app_users?id=eq.'+id);closeSheet();toast('消しました');renderUsers()}catch(e){toast('消せませんでした','err')}
+  const r=await callFn('keihi-admin',{action:'delete',id});
+  if(!r.ok){toast('消せませんでした：'+(r.data?.error||r.status),'err');return}
+  closeSheet();toast('消しました');renderUsers();
 }
 
 // ----- 経費の種類 -----
@@ -3132,21 +3210,22 @@ async function renderCardSettings(){
 // ----- AIキー -----
 function renderAi(){
   $('page-settings').innerHTML=subHead('AI読み取りキー','レシートを読むAI（Claude）のキーです。保存すると全部の端末で使えます')+
-    `<div class="field"><div class="label">キー</div><input class="input mono" id="ai-key" type="password" value="${esc(API_KEY)}" placeholder="sk-ant-..." autocomplete="off"/></div>
+    `<div class="field"><div class="label">キー${apiKeyOk()?'（変えるときだけ入力）':''}</div><input class="input mono" id="ai-key" type="password" value="" placeholder="${apiKeyOk()?'設定ずみ（キーはサーバーに保管しています）':'sk-ant-...'}" autocomplete="off"/></div>
+    <div class="hint" style="margin:-6px 0 12px">キーはサーバーにだけ保管し、スマホには送りません。</div>
     <div id="ai-status">${apiKeyOk()?'<div class="alert alert-s">設定ずみです</div>':'<div class="alert alert-w">まだ設定されていません</div>'}</div>
     <div class="btn-col"><button class="btn btn-primary" onclick="saveAiKey()">保存する</button><button class="btn btn-secondary" onclick="testAiKey()">ちゃんと使えるか試す</button></div>`;
 }
 async function saveAiKey(){
   const k=$('ai-key').value.trim();
   if(!/^sk-ant-/.test(k)||k.length<=20){toast('キーの形がちがいます（sk-ant- で始まります）','err');return}
-  await saveApiKey(k);toast('保存しました','ok');renderAi();
+  try{await saveApiKey(k);toast('保存しました','ok');renderAi()}catch(e){toast('保存できませんでした：'+e.message,'err')}
 }
 async function testAiKey(){
-  const k=$('ai-key').value.trim();const old=API_KEY;API_KEY=k;
+  const k=$('ai-key').value.trim();
+  if(!k&&!apiKeyOk()){toast('キーを入れてください','err');return}
   $('ai-status').innerHTML='<div class="busy"><div class="spinner"></div><div class="busy-title">試しています...</div></div>';
-  try{await askClaude('fast',[{type:'text',text:'{"ok":true} とだけ返してください'}],50);$('ai-status').innerHTML='<div class="alert alert-s">使えます！</div>'}
+  try{await askClaude('fast',[{type:'text',text:'{"ok":true} とだけ返してください'}],50,k||undefined);$('ai-status').innerHTML='<div class="alert alert-s">使えます！</div>'}
   catch(e){$('ai-status').innerHTML=`<div class="alert alert-d">使えませんでした：${esc(e.message)}</div>`}
-  API_KEY=old;
 }
 
 // ----- データの書き出し -----
