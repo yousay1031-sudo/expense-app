@@ -8,7 +8,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23185FA5'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='700'%3E%C2%A5%3C/text%3E%3C/svg%3E">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="経費AI">
-<meta name="theme-color" content="#F5F4F0">
+<meta name="theme-color" content="#EEF3F9">
 <title>経費AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -286,10 +286,216 @@ textarea.input{resize:none;min-height:72px}
 .check-group-title{font-size:12px;font-weight:700;color:var(--text3);margin:10px 0 2px}
 .color-input{height:46px;width:100%;border:0.5px solid var(--border2);border-radius:10px;padding:4px 8px;background:var(--surface)}
 
+/* =====================================================================
+   LIQUID GLASS THEME（白ベース）
+   ここより上の色・形を上書きします。文字は濃いまま（読みやすさ優先）
+   ===================================================================== */
+:root{
+  --bg:#EEF3F9;
+  --surface:rgba(255,255,255,.72);--surface2:rgba(240,245,251,.75);--surface3:rgba(226,234,244,.85);
+  --solid:#FFFFFF;
+  --border:rgba(30,60,110,.07);--border2:rgba(30,60,110,.12);
+  --text:#14181F;--text2:#5B6472;--text3:#8C95A3;
+  --blue:#1E6BD0;--blue-l:rgba(30,107,208,.10);--blue-d:#0E4A99;
+  --green:#0E8A66;--green-l:rgba(14,138,102,.11);
+  --amber:#B8731A;--amber-l:rgba(232,160,40,.15);
+  --red:#C23B3B;--red-l:rgba(220,60,60,.10);
+  --purple:#5B4FCF;--purple-l:rgba(91,79,207,.10);
+  --r:16px;--r-lg:22px;
+  --glass:linear-gradient(155deg,rgba(255,255,255,.86) 0%,rgba(255,255,255,.62) 55%,rgba(255,255,255,.70) 100%);
+  --glass-strong:linear-gradient(155deg,rgba(255,255,255,.95),rgba(255,255,255,.82));
+  --glass-blur:blur(22px) saturate(185%);
+  --glass-edge:1px solid rgba(255,255,255,.85);
+  --glass-shadow:0 10px 30px -8px rgba(28,58,110,.16),0 2px 6px rgba(28,58,110,.06),0 0 0 .5px rgba(28,58,110,.08);
+  --glass-hi:inset 0 1px 0 rgba(255,255,255,.95),inset 0 -8px 16px -12px rgba(30,107,208,.10);
+  --ease:cubic-bezier(.22,.9,.24,1);
+  --spring:cubic-bezier(.34,1.56,.64,1);
+}
+body{background:var(--bg);-webkit-font-smoothing:antialiased}
+/* 背景：ゆっくり動くやわらかい光 */
+body::before,body::after{content:'';position:fixed;z-index:0;pointer-events:none;border-radius:50%;filter:blur(60px);opacity:.75}
+body::before{width:70vmax;height:70vmax;left:-25vmax;top:-30vmax;background:radial-gradient(circle,rgba(120,180,255,.55),rgba(120,180,255,0) 65%);animation:lgDrift1 26s ease-in-out infinite alternate}
+body::after{width:65vmax;height:65vmax;right:-28vmax;bottom:-25vmax;background:radial-gradient(circle,rgba(150,225,210,.5),rgba(190,170,255,.25) 45%,rgba(255,255,255,0) 70%);animation:lgDrift2 32s ease-in-out infinite alternate}
+@keyframes lgDrift1{to{transform:translate(18vmax,14vmax) scale(1.12)}}
+@keyframes lgDrift2{to{transform:translate(-16vmax,-12vmax) scale(1.08)}}
+.app,.login{position:relative;z-index:1;background:transparent}
+.login{position:fixed}
+
+/* ガラスの面 */
+.card,.stat,.tile,.set-item,.biz-block,.doc-card,.login-card,.toggle,.unit-btn,.entry-row,.upload,
+.header,.bottom-nav,.sheet,.icon-btn,.back-btn,.btn-secondary,.ctx-chip,.date-nav button,.busy,.skel-card{
+  background:var(--glass);
+  -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
+  border:var(--glass-edge);
+  box-shadow:var(--glass-shadow),var(--glass-hi);
+}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .card,.stat,.tile,.set-item,.biz-block,.doc-card,.login-card,.toggle,.unit-btn,.entry-row,.upload,
+  .header,.bottom-nav,.sheet,.icon-btn,.back-btn,.btn-secondary,.ctx-chip,.date-nav button,.busy,.skel-card{background:rgba(255,255,255,.96)}
+}
+.card,.doc-card,.biz-block{border-radius:var(--r-lg)}
+.card{padding:18px}
+.card-accent{position:relative;overflow:hidden}
+.card-accent::before{content:'';position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:0 4px 4px 0;background:linear-gradient(180deg,#4C9BFF,#1E6BD0 60%,#5B4FCF)}
+.stat{border-radius:var(--r);padding:14px 16px}
+.stat-value{letter-spacing:-.3px}
+.row,.todo,.d-row,.kv,.hbar-row,.unit-card{border-bottom-color:rgba(30,60,110,.07)}
+
+/* ヘッダーと下のメニュー：画面の上に浮かぶガラス */
+.app{position:relative}
+.header{position:absolute;top:calc(8px + env(safe-area-inset-top));left:10px;right:10px;height:54px;border-radius:20px;padding:0 8px 0 14px}
+.logo{font-size:17px;letter-spacing:-.6px}
+.logo span,.login-logo span{background:linear-gradient(135deg,#3A8DFF,#1E6BD0 55%,#5B4FCF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.ctx-chip{border-radius:16px;box-shadow:var(--glass-hi);background:rgba(255,255,255,.55)}
+.scroll{padding:calc(var(--header) + 24px + env(safe-area-inset-top)) 16px calc(var(--nav) + 44px + env(safe-area-inset-bottom));scroll-padding-top:calc(var(--header) + 24px + env(safe-area-inset-top));scroll-padding-bottom:calc(var(--nav) + 40px + env(safe-area-inset-bottom))}
+.bottom-nav{position:absolute;left:14px;right:14px;bottom:calc(10px + env(safe-area-inset-bottom));height:66px;border-radius:26px;padding:0 6px}
+.bn{border-radius:20px;margin:7px 2px;transition:color .25s var(--ease)}
+.bn::before{content:'';position:absolute;inset:0;border-radius:20px;background:linear-gradient(155deg,rgba(30,107,208,.14),rgba(30,107,208,.05));box-shadow:inset 0 1px 0 rgba(255,255,255,.9);opacity:0;transform:scale(.7);transition:opacity .3s var(--ease),transform .45s var(--spring)}
+.bn.active::before{opacity:1;transform:scale(1)}
+.bn#bn-scan::before{display:none}
+.bn svg{transition:transform .45s var(--spring)}
+.bn.active svg{transform:translateY(-1px) scale(1.08)}
+.bn-cam-circle{width:58px;height:58px;margin-top:-26px;background:linear-gradient(150deg,#4C9BFF 0%,#1E6BD0 55%,#3D4FD6 100%);box-shadow:0 10px 24px -6px rgba(30,107,208,.6),inset 0 1.5px 0 rgba(255,255,255,.55),inset 0 -6px 12px rgba(10,40,120,.25);border:2px solid rgba(255,255,255,.9);position:relative;transition:transform .4s var(--spring)}
+.bn-cam-circle::after{content:'';position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(30,107,208,.35);animation:lgPulse 2.8s ease-out infinite}
+@keyframes lgPulse{0%{transform:scale(.85);opacity:.9}70%,100%{transform:scale(1.25);opacity:0}}
+.bn:active .bn-cam-circle{transform:scale(.9)}
+
+/* ボタン：押すと少し沈む・光る */
+.btn{border-radius:var(--r);position:relative;overflow:hidden;transition:transform .35s var(--spring),box-shadow .3s var(--ease),filter .2s;isolation:isolate}
+.btn:active{opacity:1;transform:scale(.97)}
+.btn-primary{background:linear-gradient(150deg,#3D8EF5 0%,#1E6BD0 60%,#1A57B8 100%);box-shadow:0 10px 22px -8px rgba(30,107,208,.65),inset 0 1px 0 rgba(255,255,255,.45)}
+.btn-green{background:linear-gradient(150deg,#22B288 0%,#0E8A66 60%,#0B7556 100%);box-shadow:0 10px 22px -8px rgba(14,138,102,.6),inset 0 1px 0 rgba(255,255,255,.4)}
+.btn-danger{background:rgba(220,60,60,.09);border:1px solid rgba(220,60,60,.22);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur)}
+.btn-primary::before,.btn-green::before{content:'';position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);transform:skewX(-18deg);animation:lgSheen 5.5s ease-in-out infinite;z-index:-1}
+@keyframes lgSheen{0%,70%{left:-60%}100%{left:130%}}
+.btn:disabled{opacity:.45;filter:saturate(.4)}
+.btn:disabled::before{display:none}
+.btn-small{border-radius:14px}
+.ripple{position:absolute;border-radius:50%;pointer-events:none;background:radial-gradient(circle,rgba(255,255,255,.55),rgba(255,255,255,0) 70%);transform:scale(0);animation:lgRipple .6s var(--ease) forwards;z-index:0}
+.btn-secondary .ripple,.tile .ripple,.set-item .ripple,.unit-btn .ripple,.stat .ripple{background:radial-gradient(circle,rgba(30,107,208,.18),rgba(30,107,208,0) 70%)}
+@keyframes lgRipple{to{transform:scale(1);opacity:0}}
+
+/* さわれる面：押したときの沈み */
+.tile,.set-item,.stat.tap,.unit-btn,.icon-btn,.back-btn,.ctx-chip,.upload,.biz-head,.row.tap,.todo.tap,.unit-card,.seg button,.store-pills button,.date-nav button,.dept-tag,.edit-mini,.link-btn{transition:transform .35s var(--spring),box-shadow .3s var(--ease),background .25s,border-color .25s,color .25s;position:relative;overflow:hidden}
+.tile:active,.set-item:active,.stat.tap:active,.unit-btn:active,.upload:active,.unit-card:active{transform:scale(.97);background:var(--glass)}
+.icon-btn:active,.back-btn:active,.date-nav button:active{transform:scale(.9)}
+.row.tap:active,.todo.tap:active{transform:scale(.99)}
+.seg button:active,.store-pills button:active,.dept-tag:active{transform:scale(.94)}
+.tile{min-height:104px;border-radius:var(--r-lg)}
+.tile-ico{font-size:30px;filter:drop-shadow(0 4px 6px rgba(28,58,110,.15));transition:transform .45s var(--spring)}
+.tile:active .tile-ico{transform:scale(1.15) rotate(-6deg)}
+.tile-badge,.bn-badge{box-shadow:0 4px 10px -2px rgba(194,59,59,.5);animation:lgPop .5s var(--spring) both}
+.set-item{border-radius:var(--r)}
+.set-item-ico,.unit-ico,.ctx-opt-ico{box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 2px 6px rgba(28,58,110,.08)}
+.set-item-ico{background:rgba(255,255,255,.7)}
+
+/* 入力欄 */
+.input,.d-input,.color-input{background:rgba(255,255,255,.78);border:1px solid rgba(30,60,110,.12);border-radius:14px;box-shadow:inset 0 1px 2px rgba(28,58,110,.06);transition:border-color .2s,box-shadow .25s var(--ease),background .2s}
+.input:focus,.d-input:focus{background:#fff;border-color:rgba(30,107,208,.55);box-shadow:0 0 0 4px rgba(30,107,208,.14),inset 0 1px 2px rgba(28,58,110,.04)}
+.input.ai{background:linear-gradient(155deg,rgba(225,238,255,.9),rgba(240,247,255,.8));border-color:rgba(30,107,208,.25)}
+
+/* 切り替えボタン（セグメント） */
+.seg,.store-pills,.sk-pills{padding:6px 6px 10px;margin:-6px -6px 6px}
+.seg button,.store-pills button{background:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.85);box-shadow:0 2px 6px rgba(28,58,110,.06),0 0 0 .5px rgba(28,58,110,.1);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur)}
+.seg button.active{background:linear-gradient(150deg,#3D8EF5,#1E6BD0);color:#fff;border-color:transparent;box-shadow:0 6px 14px -4px rgba(30,107,208,.55),inset 0 1px 0 rgba(255,255,255,.4);animation:lgPop .45s var(--spring)}
+.tabs{border-bottom-color:rgba(30,60,110,.1)}
+.tabs button{transition:color .25s}
+.tabs button.active{border-bottom-width:3px}
+
+/* お店ボタン */
+.unit-btn{border-radius:18px;border-width:1px}
+.unit-btn.sel{border:2px solid var(--uc);background:var(--glass-strong);box-shadow:0 8px 20px -6px color-mix(in srgb,var(--uc) 45%,transparent),var(--glass-hi);animation:lgPop .45s var(--spring)}
+
+/* 小さな部品 */
+.pill,.chip,.conf{box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}
+.chip{background:rgba(255,255,255,.7);box-shadow:0 0 0 .5px rgba(28,58,110,.1)}
+.alert{border-radius:var(--r);border:1px solid rgba(255,255,255,.7);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:0 4px 14px -6px rgba(28,58,110,.12)}
+.alert-i{background:linear-gradient(155deg,rgba(225,238,255,.9),rgba(235,243,255,.7))}
+.alert-s{background:linear-gradient(155deg,rgba(220,246,236,.9),rgba(232,249,242,.7))}
+.alert-w{background:linear-gradient(155deg,rgba(255,240,214,.92),rgba(255,246,228,.75))}
+.alert-d{background:linear-gradient(155deg,rgba(255,226,226,.92),rgba(255,238,238,.75))}
+.todo-check{transition:background .3s,border-color .3s,transform .45s var(--spring)}
+.todo-check.done{background:linear-gradient(150deg,#22B288,#0E8A66);box-shadow:0 4px 10px -3px rgba(14,138,102,.55)}
+.upload{border:1.5px dashed rgba(30,107,208,.28)}
+.upload.main{background:linear-gradient(155deg,rgba(225,238,255,.92),rgba(240,247,255,.7));border-color:rgba(30,107,208,.45)}
+.upload.main svg{animation:lgFloat 3.2s ease-in-out infinite}
+@keyframes lgFloat{50%{transform:translateY(-4px)}}
+.preview,.doc-thumb{border-radius:18px;border:1px solid rgba(255,255,255,.9);box-shadow:var(--glass-shadow)}
+.bar{background-image:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0));transform-origin:bottom}
+.hbar{transform-origin:left}
+.progress,.hbar-bg{background:rgba(30,60,110,.07);box-shadow:inset 0 1px 2px rgba(28,58,110,.08)}
+
+/* ボトムシート：ばねのように上がる */
+.sheet-bg{background:rgba(20,30,50,.28);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.sheet-bg.open{animation:lgFade .3s var(--ease)}
+.sheet-bg.open .sheet{animation:lgSheetUp .55s var(--spring)}
+.sheet-bg.closing{animation:lgFadeOut .22s var(--ease) forwards;pointer-events:none}
+.sheet-bg.closing .sheet{animation:lgSheetDown .25s var(--ease) forwards}
+.sheet{border-radius:28px 28px 0 0;background:var(--glass-strong);border-bottom:none}
+.sheet-handle{width:44px;height:5px;background:rgba(30,60,110,.18)}
+@keyframes lgSheetUp{from{transform:translateY(100%)}to{transform:none}}
+@keyframes lgSheetDown{to{transform:translateY(100%)}}
+@keyframes lgFade{from{opacity:0}}
+@keyframes lgFadeOut{to{opacity:0}}
+
+/* お知らせ（トースト）：ガラスのカプセル */
+.toast{background:rgba(20,26,36,.82)!important;-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%);border:1px solid rgba(255,255,255,.18);border-radius:22px;transform:translateX(-50%) translateY(20px) scale(.9);transition:opacity .3s var(--ease),transform .5s var(--spring);bottom:calc(var(--nav) + 30px + env(safe-area-inset-bottom))}
+.toast.show{transform:translateX(-50%) translateY(0) scale(1)}
+.toast.ok{box-shadow:0 10px 30px -8px rgba(14,138,102,.6),inset 0 0 0 1px rgba(34,178,136,.45)}
+.toast.err{box-shadow:0 10px 30px -8px rgba(194,59,59,.6),inset 0 0 0 1px rgba(230,90,90,.5)}
+
+/* AIが読んでいる途中 */
+.busy{border-radius:var(--r);position:relative;overflow:hidden;background:linear-gradient(155deg,rgba(225,238,255,.92),rgba(240,247,255,.75))}
+.busy::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.7) 50%,transparent 70%);background-size:250% 100%;animation:lgShimmer 1.8s linear infinite}
+.spinner{border-color:rgba(30,107,208,.9);border-top-color:transparent}
+.scan-wrap{position:relative;border-radius:18px;overflow:hidden;margin-bottom:12px}
+.scan-wrap .preview{margin:0}
+.scan-beam{position:absolute;left:0;right:0;height:28%;top:-28%;background:linear-gradient(180deg,rgba(76,155,255,0),rgba(76,155,255,.35) 70%,rgba(140,200,255,.9));border-bottom:2px solid rgba(255,255,255,.95);box-shadow:0 6px 18px rgba(76,155,255,.6);animation:lgScan 1.9s var(--ease) infinite}
+@keyframes lgScan{0%{top:-28%}100%{top:100%}}
+
+/* ===== スケルトン（読み込み中の形） ===== */
+.skel{animation:lgFade .3s var(--ease)}
+.skel-card{border-radius:var(--r-lg);padding:16px;margin-bottom:12px}
+.sk{position:relative;overflow:hidden;border-radius:10px;background:rgba(30,60,110,.08)}
+.sk::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);animation:lgSk 1.4s ease-in-out infinite}
+@keyframes lgSk{to{transform:translateX(100%)}}
+@keyframes lgShimmer{from{background-position:150% 0}to{background-position:-100% 0}}
+.sk-line{height:12px;margin:8px 0}
+.sk-title{height:18px;width:45%;margin:4px 0 12px}
+.sk-big{height:28px;width:70%;margin-top:8px}
+.sk-circle{width:40px;height:40px;border-radius:50%;flex-shrink:0}
+.sk-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:.5px solid rgba(30,60,110,.06)}
+.sk-row:last-child{border-bottom:none}
+.sk-row .sk-main{flex:1}
+.sk-pill{height:34px;width:84px;border-radius:17px;flex-shrink:0}
+.sk-tile{height:104px;border-radius:var(--r-lg)}
+.sk-chart{height:140px;border-radius:14px;margin-top:8px}
+.sk-input{height:44px;width:150px;border-radius:14px}
+.sk-pills{display:flex;gap:8px;margin-bottom:14px;overflow:hidden}
+
+/* ===== 出てくるときのアニメーション ===== */
+.page.active{animation:lgPage .5s var(--ease)}
+@keyframes lgPage{from{opacity:0;transform:translateY(10px)}}
+.lg-in{animation:lgIn .6s var(--ease) both;animation-delay:calc(var(--i,0) * 45ms)}
+@keyframes lgIn{from{opacity:0;transform:translateY(14px) scale(.98);filter:blur(3px)}to{opacity:1;transform:none;filter:none}}
+.lg-grow{animation:lgGrowY .8s var(--ease) both;animation-delay:calc(var(--i,0) * 25ms + 150ms)}
+.lg-grow-x{animation:lgGrowX .8s var(--ease) both;animation-delay:calc(var(--i,0) * 40ms + 150ms)}
+@keyframes lgGrowY{from{transform:scaleY(0)}}
+@keyframes lgGrowX{from{transform:scaleX(0)}}
+@keyframes lgPop{0%{transform:scale(.92)}100%{transform:scale(1)}}
+.login-card{border-radius:28px;padding:26px 22px;animation:lgIn .8s var(--ease) .1s both}
+.login-logo{font-size:40px;animation:lgIn .8s var(--ease) both}
+.login-sub{animation:lgIn .8s var(--ease) .05s both}
+.empty{animation:lgIn .6s var(--ease) both}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;animation-delay:0ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+
 /* ===== PRINT REPORT ===== */
 #print-frame{display:none}
 @media print{
-  .app,.login,.sheet-bg,.toast{display:none!important}
+  .app,.login,.sheet-bg,.toast,body::before,body::after{display:none!important}
   #print-frame{display:block!important}
   html,body{overflow:visible;height:auto;background:#fff}
   @page{margin:12mm;size:A4}
@@ -442,11 +648,113 @@ const WD='日月火水木金土';
 
 function toast(msg,type){
   const t=$('toast');t.textContent=msg;
-  t.style.background=type==='ok'?'#0F6E56':type==='err'?'#A32D2D':'#1A1A18';
+  t.classList.remove('ok','err');if(type==='ok'||type==='err')t.classList.add(type);
+  t.classList.remove('show');void t.offsetWidth;
   t.classList.add('show');clearTimeout(t._tm);t._tm=setTimeout(()=>t.classList.remove("show"),2400);
 }
-function openSheet(html){$('sheet').innerHTML='<div class="sheet-handle"></div>'+html;$('sheet-bg').classList.add('open');$('sheet').scrollTop=0}
-function closeSheet(){$('sheet-bg').classList.remove('open')}
+function openSheet(html){
+  const bg=$('sheet-bg');clearTimeout(bg._tm);bg.classList.remove('closing');
+  $('sheet').innerHTML='<div class="sheet-handle"></div>'+html;
+  const was=bg.classList.contains('open');bg.classList.add('open');$('sheet').scrollTop=0;
+  if(!was)motionKick($('sheet'));
+}
+function closeSheet(){
+  const bg=$('sheet-bg');if(!bg.classList.contains('open'))return;
+  if(motionOff()){bg.classList.remove('open');return}
+  bg.classList.add('closing');clearTimeout(bg._tm);
+  bg._tm=setTimeout(()=>{bg.classList.remove('open','closing')},230);
+}
+
+// ===== うごき（アニメーション） =====
+// 画面を開いたとき・読み込みが終わったときだけ、中身を順番にふわっと出す。
+// ボタンを押して描き直しただけのときは動かさない（落ち着いて操作できるように）。
+const MOTION={until:0,root:null};
+function motionOff(){return window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches}
+function motionKick(root){MOTION.until=performance.now()+900;MOTION.root=root||null}
+const MOTION_SEL='.card,.stat,.tile,.set-item,.biz-block,.doc-card,.unit-card,.todo,.row,.d-row,.kv,.alert,.unit-btn,.entry-row,.hbar-row,.toggle,.seg,.upload-grid,.store-pills,.ctx-opt,.tabs';
+function motionApply(nodes){
+  if(motionOff())return;
+  const counter=new Map();
+  nodes.forEach(el=>{
+    if(el.closest('.skel'))return;
+    const list=el.matches(MOTION_SEL)?[el]:[];
+    el.querySelectorAll&&el.querySelectorAll(MOTION_SEL).forEach(x=>list.push(x));
+    list.forEach(x=>{
+      if(x.parentElement&&x.parentElement.closest('.lg-in'))return; // 親が動くなら子は動かさない
+      const n=Math.min(counter.get(x.parentElement)||0,10);counter.set(x.parentElement,n+1);
+      x.style.setProperty('--i',n);x.classList.remove('lg-in');void x.offsetWidth;x.classList.add('lg-in');
+      x.addEventListener('animationend',()=>x.classList.remove('lg-in'),{once:true});
+    });
+    el.querySelectorAll&&el.querySelectorAll('.bar').forEach((b,i)=>{b.style.setProperty('--i',Math.min(i,40));b.classList.add('lg-grow')});
+    el.querySelectorAll&&el.querySelectorAll('.hbar,.progress>div').forEach((b,i)=>{b.style.setProperty('--i',Math.min(i,12));b.classList.add('lg-grow-x')});
+    countUp(el);
+  });
+}
+// 金額や件数を 0 から数え上げる
+function countUp(root){
+  const els=root.querySelectorAll?root.querySelectorAll('.stat-value,.d-total .amount,.d-total b,.kpi-value'):[];
+  els.forEach(el=>{
+    if(el.children.length)return;
+    const m=el.textContent.match(/^(\D*?)(-?[\d,]+)(\D*)$/);if(!m)return;
+    const target=parseInt(m[2].replace(/,/g,''),10);if(!isFinite(target)||Math.abs(target)<10)return;
+    const fmt=v=>m[1]+(m[2].includes(',')?Math.round(v).toLocaleString('ja-JP'):String(Math.round(v)))+m[3];
+    const t0=performance.now(),dur=700;
+    const step=now=>{const k=Math.min(1,(now-t0)/dur);const e=1-Math.pow(1-k,3);el.textContent=fmt(target*e);if(k<1)requestAnimationFrame(step);else el.textContent=m[1]+m[2]+m[3]};
+    el.textContent=fmt(0);requestAnimationFrame(step);
+  });
+}
+function motionInit(){
+  const obs=new MutationObserver(muts=>{
+    let replacedSkel=false;const added=[];
+    muts.forEach(m=>{
+      m.removedNodes.forEach(n=>{if(n.nodeType===1&&(n.classList.contains('skel')||n.querySelector&&n.querySelector('.skel')))replacedSkel=true});
+      m.addedNodes.forEach(n=>{if(n.nodeType===1)added.push(n)});
+    });
+    if(!added.length)return;
+    if(replacedSkel||performance.now()<MOTION.until){
+      // 同じ描き直しで重複しないよう、いちばん外側だけ
+      const top=added.filter(n=>!added.some(o=>o!==n&&o.contains(n)));
+      motionApply(top);
+    }
+  });
+  ['scroll','sheet'].forEach(id=>obs.observe($(id),{childList:true,subtree:true}));
+  // 押したところから光が広がる
+  document.addEventListener('pointerdown',e=>{
+    if(motionOff())return;
+    const t=e.target.closest('.btn,.tile,.set-item,.unit-btn,.stat.tap,.upload');if(!t||t.disabled)return;
+    const r=t.getBoundingClientRect(),size=Math.max(r.width,r.height)*2;
+    const sp=document.createElement('span');sp.className='ripple';
+    sp.style.cssText=`width:${size}px;height:${size}px;left:${e.clientX-r.left-size/2}px;top:${e.clientY-r.top-size/2}px`;
+    t.appendChild(sp);setTimeout(()=>sp.remove(),650);
+  },{passive:true});
+}
+
+// ===== スケルトン（読み込み中に、画面の形を先に出す） =====
+function skel(kind){
+  const L=(w,h)=>`<div class="sk sk-line" style="width:${w}%${h?';height:'+h+'px':''}"></div>`;
+  const row=()=>`<div class="sk-row"><div class="sk sk-circle"></div><div class="sk-main">${L(55+Math.round(Math.random()*30))}${L(30+Math.round(Math.random()*25),10)}</div><div class="sk" style="width:64px;height:18px"></div></div>`;
+  const rows=n=>Array.from({length:n},row).join('');
+  const stat=()=>`<div class="skel-card" style="margin:0;border-radius:var(--r)">${L(50,10)}<div class="sk sk-big"></div></div>`;
+  const pills=n=>`<div class="sk-pills">${Array.from({length:n},()=>'<div class="sk sk-pill"></div>').join('')}</div>`;
+  let h='';
+  if(kind==='home'){
+    h=`<div class="stat-row">${stat()}${stat()}</div><div class="skel-card"><div class="sk sk-title"></div>${rows(3)}</div>
+      <div class="tiles">${Array.from({length:4},()=>'<div class="sk sk-tile"></div>').join('')}</div>`;
+  }else if(kind==='list'){
+    h=pills(4)+`<div class="skel-card">${rows(7)}</div>`;
+  }else if(kind==='report'){
+    h=pills(3)+`<div class="stat-row">${stat()}${stat()}</div><div class="stat-row">${stat()}${stat()}</div>
+      <div class="skel-card"><div class="sk sk-title"></div><div class="sk sk-chart"></div></div><div class="skel-card">${rows(4)}</div>`;
+  }else if(kind==='form'){
+    const fr=()=>`<div class="sk-row"><div class="sk-main">${L(45)}</div><div class="sk sk-input"></div></div>`;
+    h=`<div class="skel-card"><div class="sk sk-title"></div>${Array.from({length:5},fr).join('')}</div><div class="skel-card"><div class="sk sk-title"></div>${Array.from({length:3},fr).join('')}</div>`;
+  }else if(kind==='settings'){
+    h=Array.from({length:5},()=>`<div class="skel-card" style="display:flex;gap:12px;align-items:center;padding:14px;border-radius:var(--r)"><div class="sk" style="width:36px;height:36px;border-radius:10px;flex-shrink:0"></div><div style="flex:1">${L(50)}${L(70,10)}</div></div>`).join('');
+  }else{
+    h=`<div class="skel-card">${rows(5)}</div>`;
+  }
+  return `<div class="skel" aria-busy="true" aria-label="読み込んでいます">${h}</div>`;
+}
 
 // ===== SUPABASE =====
 function sbH(extra){return Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},extra||{})}
@@ -640,6 +948,9 @@ async function loadMasters(){
 async function startApp(user){
   resetUserState();S.user=user;
   $('login').classList.add('hidden');$('app').classList.remove('hidden');
+  // 読み込みが終わるまで、ホームの形を先に出しておく
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-home'));
+  $('page-home').innerHTML='<div class="skel"><div class="sk sk-title" style="width:70%;height:26px;margin-top:4px"></div><div class="sk sk-line" style="width:45%;margin-bottom:18px"></div></div>'+skel('home');
   try{await loadMasters()}catch(e){toast('データの読み込みに失敗しました','err')}
   // AIキー：この端末に無ければDBの共有キーを使う
   if(!apiKeyOk()){
@@ -676,6 +987,7 @@ function go(name,arg){
   ['home','scan','entry'].forEach(n=>$('bn-'+n).classList.toggle('active',n===name));
   $('scroll').scrollTop=0;
   closeSheet();
+  motionKick();
   PAGES[name](arg);
 }
 function refreshPage(){
@@ -995,7 +1307,7 @@ PAGES.home=async function(){
       <div style="font-size:22px;font-weight:700">${greet}、${esc(S.user.username)}さん</div>
       <div style="font-size:13px;color:var(--text2)">${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}） ・ ${esc(ctxLabel().name)}</div>
     </div>
-    <div id="home-body"><div class="busy"><div class="spinner"></div><div class="busy-title">読み込んでいます...</div></div></div>`;
+    <div id="home-body">${skel('home')}</div>`;
   const stores=ctxStores();const ids=stores.map(s=>s.id);
   if(!ids.length){
     $('home-body').innerHTML=`<div class="alert alert-w">担当のお店がまだ設定されていません。${isOwner()?'<br>設定 →「事業・店舗・部門」からお店を作ってください。':'オーナーに担当のお店を設定してもらってください。'}</div>`+homeTiles(0,stores);
@@ -1027,7 +1339,7 @@ PAGES.home=async function(){
       if(vv.length)todos.push({text:`古物台帳の記入が足りない車が ${vv.length}台 あります`,act:"VH.filter='todo';go('vehicles')",urgent:true});}catch(e){}}
     todos.push({text:'レシート・領収書を撮影する',act:"go('scan')"});
 
-    let html=`<div class="card" style="border-left:3px solid var(--blue)"><div class="card-title" style="color:var(--blue)">今日やること</div>`+
+    let html=`<div class="card card-accent"><div class="card-title" style="color:var(--blue)">今日やること</div>`+
       todos.map(t=>`<div class="todo ${t.act?'tap':''}" ${t.act?`onclick="${t.act}"`:''}><div class="todo-check ${t.done?'done':t.urgent?'urgent':''}">${t.done?'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>':''}</div><div class="todo-text ${t.done?'done':t.urgent?'urgent':''}">${esc(t.text)}</div>${t.act?'<span class="chev">›</span>':''}</div>`).join('')+'</div>';
 
     html+=`<div class="stat-row">
@@ -1136,7 +1448,7 @@ function renderScan(){
     <div class="alert alert-i" style="font-size:13px">コツ：レシートを机に並べて、真上から明るく撮るとよく読めます。</div>
     ${SC.error?`<div class="alert alert-d">${esc(SC.error)}</div>`:''}`;
   }else if(SC.phase==='busy'){
-    h+=`<img class="preview" src="${SC.img}" alt=""/><div class="busy"><div class="spinner"></div><div><div class="busy-title">AIが読み取っています...</div><div class="busy-sub">10〜20秒ほどかかります</div></div></div>`;
+    h+=`<div class="scan-wrap"><img class="preview" src="${SC.img}" alt=""/><div class="scan-beam"></div></div><div class="busy"><div class="spinner"></div><div><div class="busy-title">AIが読み取っています...</div><div class="busy-sub">10〜20秒ほどかかります</div></div></div>`;
   }else if(SC.phase==='review'){
     const n=SC.docs.filter(d=>!d.skip).length;
     h+=`<div class="card-title" style="margin-top:4px">${SC.docs.length}件 見つかりました <button class="link-btn" onclick="scanReset()">撮り直す</button></div>
@@ -1413,7 +1725,7 @@ const STATUS_LABEL={pending:'確認待ち',approved:'確認ずみ',check:'要確
 PAGES.list=async function(arg){
   if(arg==='pending'){LI.status='pending';LI.month='all'}
   if(!LI.month)LI.month=ym();
-  $('page-list').innerHTML=pageHead('経費の一覧','')+'<div class="busy"><div class="spinner"></div><div class="busy-title">読み込んでいます...</div></div>';
+  $('page-list').innerHTML=pageHead('経費の一覧','')+skel('list');
   try{LI.rows=await fetchExpenses(ctxStoreIds(),null,null,LIST_COLS)}catch(e){LI.rows=[];toast('読み込みに失敗しました','err')}
   if(S.page!=='list')return;
   renderList();
@@ -1569,7 +1881,7 @@ async function loadDaily(){
   if(!DY.storeId||!mine.some(s=>s.id===DY.storeId))DY.storeId=(mine.find(s=>!DY.done.has(s.id))||mine.find(s=>s.id===defaultEntryStoreId())||mine[0])?.id||null;
   const store=storeById(DY.storeId);
   if(!store){el.innerHTML=pageHead('今日の売上・支出','')+'<div class="alert alert-w">担当のお店がありません。</div>';return}
-  el.innerHTML=pageHead('売上・支出の記録（日計表）',esc(store.icon||'')+' '+esc(store.name))+storePills(DY.storeId,'dailySwitch',dailyMark)+'<div class="busy"><div class="spinner"></div><div class="busy-title">読み込んでいます...</div></div>';
+  el.innerHTML=pageHead('売上・支出の記録（日計表）',esc(store.icon||'')+' '+esc(store.name))+storePills(DY.storeId,'dailySwitch',dailyMark)+skel('form');
   DY.cashOverride=false;DY.autoNote='';
   const f=`&store_id=eq.${DY.storeId}&date=eq.${DY.date}`;
   try{
@@ -1823,11 +2135,11 @@ function renderReportShell(){
     (opts.length>2?`<div class="seg">${opts.map(([k,l,i])=>`<button class="${RP.unit===k?'active':''}" onclick="rpSet('${k}')">${esc(i)} ${esc(l)}</button>`).join('')}</div>`:'')+
     `<div class="tabs">${RP_TABS.map(([k,l])=>`<button class="${RP.tab===k?'active':''}" onclick="RP.tab='${k}';renderReportShell();renderReportTab()">${l}</button>`).join('')}</div>
     ${['sum','day','ar','goal'].includes(RP.tab)?`<select class="input" style="margin-bottom:12px" onchange="RP.month=this.value;loadReport()">${months.map(m=>`<option value="${m}" ${m===RP.month?'selected':''}>${monthLabel(m)}</option>`).join('')}</select>`:''}
-    <div id="rp-body"><div class="busy"><div class="spinner"></div><div class="busy-title">集計しています...</div></div></div>`;
+    <div id="rp-body">${skel('report')}</div>`;
 }
 async function loadReport(){
   const ids=rpIds();const m=RP.month,pm=addMonths(m,-1);
-  if($('rp-body'))$('rp-body').innerHTML='<div class="busy"><div class="spinner"></div><div class="busy-title">集計しています...</div></div>';
+  if($('rp-body'))$('rp-body').innerHTML=skel('report');
   try{
     const [ex,sales,pex,psales]=await Promise.all([
       fetchExpenses(ids,monthStart(m),monthEnd(m)),
@@ -1940,7 +2252,7 @@ function reportDay(){
 // --- 曜日 ---
 async function reportWeek(){
   const ids=rpIds();const to=ymd(),from=addDays(to,-90);
-  $('rp-body').innerHTML='<div class="busy"><div class="spinner"></div><div class="busy-title">集計しています...</div></div>';
+  $('rp-body').innerHTML=skel('report');
   try{
     const [sales,ex]=await Promise.all([fetchSales(ids,from,to),fetchExpenses(ids,from,to,'total,date')]);
     const sAmt=Array(7).fill(0),days=Array(7).fill(0).map(()=>new Set()),eAmt=Array(7).fill(0);
@@ -2010,7 +2322,7 @@ async function saveFixed(storeId){
 // --- 来月の予想 ---
 async function reportNext(){
   const ids=rpIds();const cur=ym();const months=[];for(let i=5;i>=0;i--)months.push(addMonths(cur,-i));
-  $('rp-body').innerHTML='<div class="busy"><div class="spinner"></div><div class="busy-title">計算しています...</div></div>';
+  $('rp-body').innerHTML=skel('report');
   try{
     const from=monthStart(months[0]),to=monthEnd(cur);
     const [sales,ex]=await Promise.all([fetchSales(ids,from,to),fetchExpenses(ids,from,to,'total,date')]);
@@ -2069,7 +2381,7 @@ function ledgerMissing(v){
 PAGES.vehicles=async function(){
   const vs=vehicleStores();
   if(!vs.length){$('page-vehicles').innerHTML=pageHead('車両の管理','')+`<div class="alert alert-i">担当のお店では車両の管理を使っていません。${isOwner()?'<br>設定 → 事業 で「車両の在庫を管理する」をオンにすると使えます。':''}</div>`;return}
-  $('page-vehicles').innerHTML=pageHead('車両の管理','')+'<div class="busy"><div class="spinner"></div><div class="busy-title">読み込んでいます...</div></div>';
+  $('page-vehicles').innerHTML=pageHead('車両の管理','')+skel('list');
   try{
     const ids=vs.map(s=>s.id);
     const [rows,ex]=await Promise.all([
@@ -2389,7 +2701,7 @@ function invSwitch(id){IV.storeId=id;loadInvoices()}
 async function loadInvoices(){
   const st=storeById(IV.storeId);
   if(!st){$('page-invoices').innerHTML=pageHead('請求書のチェック','')+'<div class="alert alert-w">担当のお店がありません。</div>';return}
-  $('page-invoices').innerHTML=pageHead('請求書のチェック','')+'<div class="busy"><div class="spinner"></div><div class="busy-title">読み込んでいます...</div></div>';
+  $('page-invoices').innerHTML=pageHead('請求書のチェック','')+skel('list');
   try{
     IV.rows=await db.get(`invoices?select=*&store_id=eq.${IV.storeId}&order=invoice_date.desc,created_at.desc&limit=60`);
     const from=IV.rows.reduce((m,i)=>{const d=i.period_start||(i.invoice_date?addMonths(i.invoice_date.slice(0,7),-1)+'-01':null);return d&&(!m||d<m)?d:m},null);
@@ -2606,7 +2918,7 @@ async function deleteDept(id){
 
 // ----- ユーザー -----
 async function renderUsers(){
-  $('page-settings').innerHTML=subHead('ユーザー','')+'<div class="busy"><div class="spinner"></div><div class="busy-title">読み込んでいます...</div></div>';
+  $('page-settings').innerHTML=subHead('ユーザー','')+skel('settings');
   try{S.users=await db.get('app_users?select=id,username,role,store_id,store_ids&order=created_at')}catch(e){S.users=[]}
   const h=subHead('ユーザー','スタッフは、担当にしたお店だけ見られます。複数のお店を担当にすると、画面上部で切り替えられます')+
     S.users.map(u=>{
@@ -2859,6 +3171,7 @@ function saveAdvanced(){
 function resetAdvanced(){['sb_url','sb_key','model_read','model_fast'].forEach(k=>LS.del(k));location.reload()}
 
 // ===== START =====
+motionInit();
 resumeSession();
 </script>
 </body>
