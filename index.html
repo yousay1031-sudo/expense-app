@@ -452,6 +452,18 @@ body::after{width:65vmax;height:65vmax;right:-28vmax;bottom:-25vmax;background:r
 .busy::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.7) 50%,transparent 70%);background-size:250% 100%;animation:lgShimmer 1.8s linear infinite}
 .spinner{border-color:rgba(30,107,208,.9);border-top-color:transparent}
 .scan-wrap{position:relative;border-radius:18px;overflow:hidden;margin-bottom:12px}
+.job-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;margin-bottom:14px}
+.job{position:relative;border-radius:16px;overflow:hidden;aspect-ratio:3/4;background:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.9);box-shadow:var(--glass-shadow)}
+.job img{width:100%;height:100%;object-fit:cover;display:block}
+.job.wait img{filter:grayscale(.6) opacity(.6)}
+.job.error img{filter:grayscale(1) opacity(.35)}
+.job-badge{position:absolute;left:6px;right:6px;bottom:6px;padding:4px 6px;border-radius:10px;font-size:11px;font-weight:700;text-align:center;background:rgba(20,26,36,.72);color:#fff;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.job-badge.ok{background:rgba(14,138,102,.88)}
+.job-badge.ng{background:rgba(194,59,59,.88)}
+.job.done .job-badge.ok{animation:lgPop .5s var(--spring)}
+.job-err{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px;font-size:11px;color:var(--red);text-align:center;font-weight:700}
+.job-err-btns{display:flex;flex-direction:column;gap:6px;margin-top:8px;width:100%}
+.job-err .btn-small{padding:8px 6px;font-size:12px;width:100%}
 .scan-wrap .preview{margin:0}
 .scan-beam{position:absolute;left:0;right:0;height:28%;top:-28%;background:linear-gradient(180deg,rgba(76,155,255,0),rgba(76,155,255,.35) 70%,rgba(140,200,255,.9));border-bottom:2px solid rgba(255,255,255,.95);box-shadow:0 6px 18px rgba(76,155,255,.6);animation:lgScan 1.9s var(--ease) infinite}
 @keyframes lgScan{0%{top:-28%}100%{top:100%}}
@@ -601,7 +613,7 @@ body::after{width:65vmax;height:65vmax;right:-28vmax;bottom:-25vmax;background:r
 </div>
 
 <input type="file" id="file-cam" accept="image/*" capture="environment"/>
-<input type="file" id="file-lib" accept="image/*"/>
+<input type="file" id="file-lib" accept="image/*" multiple/>
 <input type="file" id="file-csv" accept=".csv,.txt,text/csv"/>
 
 <div class="toast" id="toast"></div>
@@ -1147,17 +1159,24 @@ async function compressImage(file,maxPx=2048){
   while(out.length*0.75>3.8*1024*1024&&q>.4){q-=.1;out=c.toDataURL('image/jpeg',q)}
   return out;
 }
-async function cropDataUrl(dataUrl,box){
+async function cropDataUrl(dataUrl,box,maxPx){
   const img=await loadImg(dataUrl);
   const b=Object.assign({x1:0,y1:0,x2:1,y2:1},box||{});
   const x=Math.max(0,b.x1)*img.width,y=Math.max(0,b.y1)*img.height;
   const w=Math.max(10,(Math.min(1,b.x2)-Math.max(0,b.x1))*img.width),h=Math.max(10,(Math.min(1,b.y2)-Math.max(0,b.y1))*img.height);
-  const c=document.createElement('canvas');c.width=Math.round(w);c.height=Math.round(h);
-  c.getContext('2d').drawImage(img,x,y,w,h,0,0,w,h);
-  return c.toDataURL('image/jpeg',.9);
+  const k=maxPx&&Math.max(w,h)>maxPx?maxPx/Math.max(w,h):1;
+  const c=document.createElement('canvas');c.width=Math.round(w*k);c.height=Math.round(h*k);
+  c.getContext('2d').drawImage(img,x,y,w,h,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',.88);
 }
 function dataUrlToBlob(u){const[h,b]=u.split(',');const mime=(h.match(/:(.*?);/)||[])[1]||'image/jpeg';const bin=atob(b);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new Blob([a],{type:mime})}
 // ファイル選択を Promise で
+function pickFiles(kind){
+  return new Promise(ok=>{
+    const el=$(kind==='cam'?'file-cam':'file-lib');
+    el.value='';el.onchange=()=>ok(Array.from(el.files||[]));el.click();
+  });
+}
 function pickFile(kind){
   return new Promise(ok=>{
     const el=$(kind==='cam'?'file-cam':kind==='csv'?'file-csv':'file-lib');
@@ -1502,8 +1521,11 @@ function openDailyFor(storeId){S.dailyStoreId=storeId;go('daily')}
 </script>
 <script>
 // ===== SCAN（撮影 → AIが読む → 確認して保存） =====
-const SC={phase:'idle',img:null,docs:[],error:null,saved:0,failed:0,savedTo:{}};
+// 写真は何枚でもまとめて読める：写真1枚＝1つの「job」。3枚ずつ同時にAIへ送る。
+// 1枚の写真にレシートが何枚も写っているときは、1枚ずつ切り出して大きくしてから読み直す（小さい文字も正確に）
+const SC={phase:'idle',jobs:[],docs:[],error:null,saved:0,failed:0,savedTo:{},deptEx:null};
 function scanHasWork(){return SC.phase==='review'||SC.phase==='busy'}
+const scanReading=()=>SC.jobs.some(j=>j.status==='wait'||j.status==='reading');
 function scanSyncStore(){renderScan()}
 PAGES.scan=function(){
   if(SC.phase==='done')SC.phase='idle';
@@ -1525,7 +1547,7 @@ function scanSetStore(storeId,i){
 }
 function renderScan(){
   const el=$('page-scan');
-  let h=pageHead('レシートを撮影','1枚でも、何枚か並べて撮ってもOK。AIが読み取ります');
+  let h=pageHead('レシートを撮影','写真は何枚でもまとめて選べます。1枚に何枚か並べて撮ってもOK');
   if(!apiKeyOk()){
     h+=`<div class="alert alert-w">AI読み取りキーがまだ設定されていません。${isOwner()?'設定 →「AI読み取りキー」で登録してください。':'オーナーに設定してもらってください。'}<br>写真なしで <a href="#" onclick="go('entry');return false" style="color:inherit;font-weight:700">手で入力</a> することもできます。</div>`;
     if(isOwner())h+=`<button class="btn btn-secondary" onclick="go('settings','ai')">AI読み取りキーを設定する</button>`;
@@ -1540,10 +1562,20 @@ function renderScan(){
     <div class="alert alert-i" style="font-size:13px">コツ：レシートを机に並べて、真上から明るく撮るとよく読めます。</div>
     ${SC.error?`<div class="alert alert-d">${esc(SC.error)}</div>`:''}`;
   }else if(SC.phase==='busy'){
-    h+=`<div class="scan-wrap"><img class="preview" src="${SC.img}" alt=""/><div class="scan-beam"></div></div><div class="busy"><div class="spinner"></div><div><div class="busy-title">AIが読み取っています...</div><div class="busy-sub">10〜20秒ほどかかります</div></div></div>`;
+    const done=SC.jobs.filter(j=>j.status==='done').length,total=SC.jobs.length;
+    const found=SC.jobs.reduce((a,j)=>a+(j.docs?j.docs.length:0),0);
+    const ng=SC.jobs.filter(j=>j.status==='error').length;
+    h+=scanReading()?`<div class="busy"><div class="spinner"></div><div><div class="busy-title">写真 ${total}枚を読んでいます（${done}枚おわり${found?`・${found}件 見つかりました`:''}）</div><div class="busy-sub">読んでいるあいだに、続けて撮ったり写真を足したりできます</div></div></div>`
+      :`<div class="alert alert-w">${ng}枚は読めませんでした。「もう一度」を押すか、「はずす」で外してください。${found?`読めた ${found}件 は下のボタンで確認できます。`:''}</div>`;
+    h+=`<div class="job-grid">${SC.jobs.map(scanJobTile).join('')}</div>
+      <div class="upload-grid" style="margin-top:4px">
+        <button class="upload main" onclick="scanPick('cam')"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span>もう1枚撮る</span></button>
+        <button class="upload" onclick="scanPick('lib')"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg><span>写真を足す</span></button>
+      </div>
+      ${!scanReading()&&SC.jobs.some(j=>j.status==='error')?`<button class="btn btn-primary" onclick="scanToReview()">読めた分を確認する</button>`:''}`;
   }else if(SC.phase==='review'){
     const n=SC.docs.filter(d=>!d.skip).length;
-    h+=`<div class="card-title" style="margin-top:4px">${SC.docs.length}件 見つかりました <button class="link-btn" onclick="scanReset()">撮り直す</button></div>
+    h+=`<div class="card-title" style="margin-top:4px">${SC.jobs.length>1?`写真${SC.jobs.length}枚から `:''}${SC.docs.length}件 見つかりました <button class="link-btn" onclick="scanPick('lib')">＋ 写真を足す</button></div>
       <div class="hint" style="margin-bottom:10px">内容を確かめて、ちがうところは直してから保存してください。いらないものはチェックを外します。</div>`;
     h+=SC.docs.map((d,i)=>scanDocCard(d,i)).join('');
     h+=`<div class="btn-col" style="margin-top:6px"><button class="btn btn-green" id="sc-save" onclick="scanSave()" ${n?'':'disabled'}>${n}件を保存する</button><button class="btn btn-secondary" onclick="scanReset()">やめて撮り直す</button></div>`;
@@ -1614,48 +1646,120 @@ function collectScanDocs(){
     d.department_id=$(`d${i}-dept`)?.value||null;
   });
 }
-function scanReset(){SC.phase='idle';SC.img=null;SC.docs=[];SC.error=null;renderScan()}
+function scanReset(){SC.phase='idle';SC.jobs=[];SC.docs=[];SC.error=null;SC.deptEx=null;renderScan()}
+function scanJobTile(j){
+  const st=j.status==='done'?`<div class="job-badge ok">✓ ${j.docs.length}件</div>`:j.status==='error'?'':j.status==='wait'?`<div class="job-badge">待っています</div>`:`<div class="job-badge">${j.stage==='refine'?`1枚ずつ読み直し ${j.refined||0}/${j.parts||0}`:'読んでいます'}</div>`;
+  return `<div class="job ${j.status}"><img src="${j.img}" alt=""/>${j.status==='reading'?'<div class="scan-beam"></div>':''}${st}
+    ${j.status==='error'?`<div class="job-err">${esc(j.error||'')}<div class="job-err-btns"><button class="btn btn-primary btn-small" onclick="scanRetry('${j.id}')">もう一度</button><button class="btn btn-secondary btn-small" onclick="scanDropJob('${j.id}')">はずす</button></div></div>`:''}</div>`;
+}
+function scanToReview(){collectScanDocs();SC.phase=SC.docs.length?'review':'idle';if(!SC.docs.length)SC.jobs=[];renderScan()}
+function scanRetry(id){const j=SC.jobs.find(x=>x.id===id);if(!j)return;j.status='wait';j.error=null;renderScan();scanPump()}
+function scanDropJob(id){SC.jobs=SC.jobs.filter(x=>x.id!==id);if(!SC.jobs.length){scanReset();return}scanMaybeFinish()}
 async function scanPick(kind){
-  const f=await pickFile(kind);if(!f)return;
+  const files=kind==='cam'?[await pickFile('cam')].filter(Boolean):await pickFiles('lib');
+  if(!files.length)return;
   SC.error=null;SC.savedTo={};
-  try{SC.img=await compressImage(f)}catch(e){SC.error='写真を開けませんでした';renderScan();return}
-  SC.phase='busy';renderScan();
-  try{
-    const mine=myStores();
-    const hint=mine.length>1?`\n\nこの会社のお店（store_index で、どのお店の経費らしいかを0からの番号で答える。わからなければ null）:\n`+mine.map((s,k)=>`${k}: ${unitLabel(s)}（${s.name}）`).join('\n'):'';
-    const ex=await deptExamples(mine.map(s=>s.id));SC.deptEx=ex;
-    const r=await askClaude('read',imgContent(SC.img,SCAN_PROMPT+hint+deptPromptHint(mine,ex)),2500);
-    const list=(r.documents||[]).filter(x=>x&&(x.total!=null||x.vendor_name));
-    if(!list.length)throw new Error('レシートが見つかりませんでした。もう少し近づいて撮ってみてください。');
-    const docs=[];
-    for(const x of list){
-      const d={
-        type:x.type||'receipt',
-        vendor_name:(x.vendor_name||'').trim(),
-        date:normDate(x.date),
-        total:normAmount(x.total),
-        tax_8:normAmount(x.tax_8),tax_10:normAmount(x.tax_10),subtotal:normAmount(x.subtotal),
-        payment_method:normPay(x.payment_method),
-        memo:(x.memo||'').trim(),
-        registration_number:x.registration_number||null,
-        confidence:typeof x.confidence==='number'?x.confidence:0.8,
-        raw:x,skip:x.type==='card_statement',
-      };
-      if(!d.date){d.date=ymd();d.noDate=true}
-      d.thumb=list.length>1?await cropDataUrl(SC.img,x.crop):SC.img;
-      d.category_id=await guessCategory(d.vendor_name);
-      const g=await guessStore(d.vendor_name,[d.memo],typeof x.store_index==='number'?x.store_index:null);
-      d.storeId=g.id;d.storeWhy=g.why;
-      const ai=deptNeed(d.storeId,ex).ready?deptByName(d.storeId,x.dept):null;
-      d.deptAi=ai?ai.id:null;d.deptMixed=!!x.dept_mixed;
-      if(ai){d.department_id=ai.id;d.deptWhy='ai'}
-      else{d.department_id=d.deptMixed?null:guessDept(d.storeId,[d.vendor_name,d.memo]);d.deptWhy=d.department_id?'kw':''}
-      docs.push(d);
-    }
-    SC.docs=docs;SC.phase='review';
-  }catch(e){SC.phase='idle';SC.error='読み取れませんでした：'+e.message}
+  if(SC.phase==='review')collectScanDocs();
+  for(const f of files){
+    try{
+      const img=await compressImage(f);           // AIに送る大きさ
+      const hi=await compressImage(f,3200);       // 切り出し用（細かい文字のため大きめ）
+      SC.jobs.push({id:uid(),img,hi,status:'wait',docs:[]});
+    }catch(e){toast('開けない写真がありました','err')}
+  }
+  if(!SC.jobs.length){renderScan();return}
+  SC.phase='busy';renderScan();scanPump();
+}
+// 同時に3枚まで読む
+const SCAN_PARALLEL=3;
+function scanPump(){
+  const running=SC.jobs.filter(j=>j.status==='reading').length;
+  SC.jobs.filter(j=>j.status==='wait').slice(0,Math.max(0,SCAN_PARALLEL-running)).forEach(j=>{runScanJob(j)});
+}
+function scanMaybeFinish(){
+  if(scanReading()){if(S.page==='scan'&&SC.phase==='busy')renderScan();return}
+  if(SC.phase==='busy'&&!SC.jobs.some(j=>j.status==='error')){SC.phase=SC.docs.length?'review':'idle';if(!SC.docs.length){SC.error='レシートが見つかりませんでした。もう少し近づいて撮ってみてください。';SC.jobs=[]}}
   if(S.page==='scan')renderScan();
 }
+// AIの同時呼び出しを数本までにする（1枚を切り出して読み直すときも含めて）
+const AIQ={n:0,q:[]};
+async function aiSlot(fn){
+  if(AIQ.n>=4)await new Promise(ok=>AIQ.q.push(ok));
+  AIQ.n++;try{return await fn()}finally{AIQ.n--;const nx=AIQ.q.shift();if(nx)nx()}
+}
+function scanHints(){
+  const mine=myStores();
+  const hint=mine.length>1?`\n\nこの会社のお店（store_index で、どのお店の経費らしいかを0からの番号で答える。わからなければ null）:\n`+mine.map((s,k)=>`${k}: ${unitLabel(s)}（${s.name}）`).join('\n'):'';
+  return hint+deptPromptHint(mine,SC.deptEx||{});
+}
+function padBox(b,p=0.03){b=Object.assign({x1:0,y1:0,x2:1,y2:1},b||{});return {x1:Math.max(0,b.x1-p),y1:Math.max(0,b.y1-p),x2:Math.min(1,b.x2+p),y2:Math.min(1,b.y2+p)}}
+async function runScanJob(job){
+  job.status='reading';job.stage='find';
+  if(S.page==='scan'&&SC.phase==='busy')renderScan();
+  try{
+    if(!SC.deptEx)SC.deptEx=await deptExamples(myStores().map(s=>s.id));
+    const hints=scanHints();
+    // 1回目：写真全体から書類を全部見つけて読む
+    const r=await aiSlot(()=>askClaude('read',imgContent(job.img,SCAN_PROMPT+hints),8000));
+    const list=(r.documents||[]).filter(x=>x&&(x.total!=null||x.vendor_name));
+    if(!list.length)throw new Error('レシートが見つかりませんでした');
+    // 2回目：何枚も写っているときは、1枚ずつ切り出して大きくして読み直す
+    let parts=list.map(x=>({x,thumb:job.img}));
+    if(list.length>1){
+      job.stage='refine';job.parts=list.length;job.refined=0;
+      if(S.page==='scan'&&SC.phase==='busy')renderScan();
+      parts=await Promise.all(list.map(async x=>{
+        const crop=await cropDataUrl(job.hi,padBox(x.crop),1600);
+        let y=null;
+        if(x.type!=='card_statement'){
+          try{
+            const r2=await aiSlot(()=>askClaude('read',imgContent(crop,SCAN_PROMPT+SCAN_ONE+hints),2500));
+            y=(r2.documents||[])[0]||null;
+          }catch(e){y=null}
+        }
+        job.refined++;if(S.page==='scan'&&SC.phase==='busy')renderScan();
+        // 読み直した結果を優先。読めなかった項目は1回目の結果を使う
+        const m=Object.assign({},x);
+        if(y)Object.keys(y).forEach(k=>{if(k!=='crop'&&y[k]!==null&&y[k]!==undefined&&y[k]!=='')m[k]=y[k]});
+        m._refined=!!y;
+        return {x:m,thumb:crop};
+      }));
+    }
+    const docs=[];
+    for(const p of parts)docs.push(await scanBuildDoc(p.x,p.thumb));
+    job.docs=docs;job.status='done';
+    if(SC.phase==='review')collectScanDocs();
+    SC.docs.push(...docs);
+  }catch(e){job.status='error';job.error=/見つかりません/.test(e.message)?'レシートが写っていないようです':'読み取れませんでした：'+e.message}
+  scanPump();scanMaybeFinish();
+}
+async function scanBuildDoc(x,thumb){
+  const d={
+    type:x.type||'receipt',
+    vendor_name:(x.vendor_name||'').trim(),
+    date:normDate(x.date),
+    total:normAmount(x.total),
+    tax_8:normAmount(x.tax_8),tax_10:normAmount(x.tax_10),subtotal:normAmount(x.subtotal),
+    payment_method:normPay(x.payment_method),
+    memo:(x.memo||'').trim(),
+    registration_number:x.registration_number||null,
+    confidence:typeof x.confidence==='number'?x.confidence:0.8,
+    raw:x,skip:x.type==='card_statement',thumb,
+  };
+  if(!d.date){d.date=ymd();d.noDate=true}
+  d.category_id=await guessCategory(d.vendor_name);
+  const g=await guessStore(d.vendor_name,[d.memo],typeof x.store_index==='number'?x.store_index:null);
+  d.storeId=g.id;d.storeWhy=g.why;
+  const ex=SC.deptEx||{};
+  const ai=deptNeed(d.storeId,ex).ready?deptByName(d.storeId,x.dept):null;
+  d.deptAi=ai?ai.id:null;d.deptMixed=!!x.dept_mixed;
+  if(ai){d.department_id=ai.id;d.deptWhy='ai'}
+  else{d.department_id=d.deptMixed?null:guessDept(d.storeId,[d.vendor_name,d.memo]);d.deptWhy=d.department_id?'kw':''}
+  return d;
+}
+const SCAN_ONE=`
+
+この写真は、書類を1枚だけ切り出したものです。documents は1件だけ返してください（まわりに写りこんだ別の書類の一部は無視）。crop は {"x1":0,"y1":0,"x2":1,"y2":1}。`;
 const SCAN_PROMPT=`この写真に写っている書類（レシート・領収書・納品書・請求書・カード明細など）をすべて読み取り、JSONだけを返してください。説明文は不要です。
 {"documents":[{"type":"receipt|delivery_note|invoice|card_statement|other","vendor_name":"店名・会社名","date":"YYYY-MM-DD","total":1234,"tax_8":null,"tax_10":null,"subtotal":null,"payment_method":"現金|カード|振込|アプリ|不明","memo":"主な品目を短く","registration_number":null,"crop":{"x1":0,"y1":0,"x2":1,"y2":1},"confidence":0.9,"store_index":null,"dept":null,"dept_mixed":false}]}
 ルール:
@@ -1677,7 +1781,7 @@ async function scanSave(){
   for(let i=0;i<list.length;i++){
     const d=list[i];btn.textContent=`保存しています... (${i+1}/${list.length})`;
     try{
-      const up=await uploadImage(dataUrlToBlob(d.thumb||SC.img),'scan');
+      const up=await uploadImage(dataUrlToBlob(d.thumb),'scan');
       await db.post('expenses',{
         store_id:d.storeId,doc_type:d.type==='other'?'receipt':d.type,
         vendor_name:d.vendor_name||null,date:d.date,total:d.total,
@@ -1693,7 +1797,7 @@ async function scanSave(){
       ok++;
     }catch(e){ng++;console.error(e)}
   }
-  SC.saved=ok;SC.failed=ng;SC.phase='done';SC.docs=[];SC.img=null;
+  SC.saved=ok;SC.failed=ng;SC.phase='done';SC.docs=[];SC.jobs=[];SC.deptEx=null;
   toast(ok+'件 保存しました','ok');
   renderScan();
 }
