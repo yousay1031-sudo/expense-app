@@ -907,6 +907,12 @@ const bizById=id=>S.businesses.find(b=>b.id===id);
 const bizOfStore=id=>bizById(storeById(id)?.business_id);
 const catById=id=>S.cats.find(c=>c.id===id);
 const deptById=id=>S.depts.find(d=>d.id===id);
+// 営業日：夜中まで営業するお店は、区切りの時刻（例 5時）までを前の日の営業分にする
+function bizToday(storeId,now=new Date()){
+  const h=storeById(storeId)?.day_start_hour||0;
+  const d=new Date(now);if(h&&d.getHours()<h)d.setDate(d.getDate()-1);
+  return ymd(d);
+}
 function storeName(id){const s=storeById(id);return s?s.name:'（店舗なし）'}
 function sortByOrder(a,b){return (a.sort_order||0)-(b.sort_order||0)||String(a.created_at||'').localeCompare(String(b.created_at||''))}
 // このユーザーが触れる店舗
@@ -1411,12 +1417,15 @@ function downloadText(name,text,type='text/csv;charset=utf-8;'){
 PAGES.home=async function(){
   const el=$('page-home');
   const h=new Date().getHours();
-  const greet=h<11?'おはようございます':h<17?'こんにちは':'おつかれさまです';
-  const d=new Date();
+  // 夜中まで営業するお店だけを担当している人には、営業日（前の日）を出す
+  const bds=[...new Set(myStores().map(s=>bizToday(s.id)))];
+  const nightBiz=bds.length===1&&bds[0]!==ymd();
+  const greet=nightBiz?'おつかれさまです':h<11?'おはようございます':h<17?'こんにちは':'おつかれさまです';
+  const d=nightBiz?parseYmd(bds[0]):new Date();
   el.innerHTML=`
     <div style="padding:2px 0 14px">
       <div style="font-size:22px;font-weight:700">${greet}、${esc(S.user.username)}さん</div>
-      <div style="font-size:13px;color:var(--text2)">${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}） ・ ${esc(ctxLabel().name)}</div>
+      <div style="font-size:13px;color:var(--text2)">${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}）${nightBiz?'の営業':''} ・ ${esc(ctxLabel().name)}</div>
     </div>
     <div id="home-body">${skel('home')}</div>`;
   const stores=ctxStores();const ids=stores.map(s=>s.id);
@@ -1424,7 +1433,9 @@ PAGES.home=async function(){
     $('home-body').innerHTML=`<div class="alert alert-w">担当のお店がまだ設定されていません。${isOwner()?'<br>設定 →「事業・店舗・部門」からお店を作ってください。':'オーナーに担当のお店を設定してもらってください。'}</div>`+homeTiles(0,stores);
     return;
   }
-  const m=ym(),today=ymd();
+  // 営業日はお店ごと（夜中まで営業するお店は朝の区切りまで前の日）
+  const todayOf=id=>bizToday(id);
+  const m=stores.map(s=>todayOf(s.id)).sort()[0]?.slice(0,7)||ym(),today=ymd();
   try{
     const [ex,sales,pendingRows]=await Promise.all([
       fetchExpenses(ids,monthStart(m),monthEnd(m),'id,store_id,total,date,status'),
@@ -1432,7 +1443,7 @@ PAGES.home=async function(){
       db.getAll('expenses?select=id,store_id'+inStores(ids)+'&status=eq.pending&order=id'),
     ]);
     if(S.page!=='home')return;
-    const isToday=r=>r.date===today;
+    const isToday=r=>r.date===todayOf(r.store_id);
     const todaySales=salesTotal(sales,isToday);
     const monthSales=salesTotal(sales),monthExp=expenseTotal(ex),profit=monthSales-monthExp;
     const reportedToday=new Set(sales.reports.filter(isToday).map(r=>r.store_id));
@@ -2064,17 +2075,27 @@ PAGES.daily=function(){
   const cs=ctxStores();
   if(S.dailyStoreId&&cs.some(s=>s.id===S.dailyStoreId)){DY.storeId=S.dailyStoreId;S.dailyStoreId=null}
   else DY.storeId=null; // 開くたびに「まだ入力していないお店」から始める
-  DY.date=ymd();
+  DY.date=null;DY.dateAuto=true; // 日付はお店の営業日にあわせて自動
   loadDaily();
 };
 function dailySwitch(id){DY.storeId=id;rememberStore(id);loadDaily()}
-function dailyDate(d){if(!d)return;DY.date=d;loadDaily()}
+function dailyDate(d){if(!d)return;DY.date=d;DY.dateAuto=false;loadDaily()}
+function dailyToday(){DY.date=null;DY.dateAuto=true;loadDaily()}
 function dailyMark(s){return DY.done.has(s.id)?'入力ずみ ✓':'まだ'}
 async function loadDaily(){
   const el=$('page-daily');
   const mine=myStores();
-  try{const d=await db.get(`daily_reports?select=store_id&date=eq.${DY.date}`+inStores(mine.map(s=>s.id)));DY.done=new Set(d.map(x=>x.store_id))}catch(e){DY.done=new Set()}
+  const loadDone=async()=>{try{const d=await db.get(`daily_reports?select=store_id,date`+inStores(mine.map(s=>s.id))+`&date=gte.${addDays(ymd(),-1)}&date=lte.${ymd()}`);DY.doneRows=d}catch(e){DY.doneRows=[]}};
+  const doneFor=date=>new Set((DY.doneRows||[]).filter(x=>x.date===date).map(x=>x.store_id));
+  if(DY.dateAuto){
+    // 「まだ入力していないお店」を、それぞれのお店の営業日で見る
+    await loadDone();
+    DY.done=new Set(mine.filter(s=>doneFor(bizToday(s.id)).has(s.id)).map(s=>s.id));
+  }else{
+    try{const d=await db.get(`daily_reports?select=store_id&date=eq.${DY.date}`+inStores(mine.map(s=>s.id)));DY.done=new Set(d.map(x=>x.store_id))}catch(e){DY.done=new Set()}
+  }
   if(!DY.storeId||!mine.some(s=>s.id===DY.storeId))DY.storeId=(mine.find(s=>!DY.done.has(s.id))||mine.find(s=>s.id===defaultEntryStoreId())||mine[0])?.id||null;
+  if(DY.dateAuto&&DY.storeId)DY.date=bizToday(DY.storeId);
   const store=storeById(DY.storeId);
   if(!store){el.innerHTML=pageHead('今日の売上・支出','')+'<div class="alert alert-w">担当のお店がありません。</div>';return}
   el.innerHTML=pageHead('売上・支出の記録（日計表）',esc(store.icon||'')+' '+esc(store.name))+storePills(DY.storeId,'dailySwitch',dailyMark)+skel('form');
@@ -2103,15 +2124,18 @@ function dyInput(id,val,label,sub){
 }
 function renderDaily(){
   const store=storeById(DY.storeId);const biz=bizOfStore(DY.storeId);const r=DY.report||{};
-  const isToday=DY.date===ymd();
+  const bt=bizToday(DY.storeId);
+  const isToday=DY.date===bt;
+  const night=isToday&&bt!==ymd(); // 夜中：前の日の営業分として入れている
   let h=pageHead('売上・支出の記録（日計表）',esc(store.icon||'')+' '+esc(store.name))+storePills(DY.storeId,'dailySwitch',dailyMark);
   h+=`<div class="date-nav"><button onclick="dailyDate(addDays(DY.date,-1))" aria-label="前の日">‹</button><input class="input" type="date" value="${DY.date}" onchange="dailyDate(this.value)"/><button onclick="dailyDate(addDays(DY.date,1))" aria-label="次の日">›</button></div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    ${isToday?'':'<button class="btn btn-secondary btn-small" onclick="dailyDate(ymd())">今日にもどる</button>'}
+    ${isToday?'':'<button class="btn btn-secondary btn-small" onclick="dailyToday()">今日にもどる</button>'}
     <button class="btn btn-secondary btn-small" onclick="copyPrevDay()">📋 前の日をコピー</button>
     ${apiKeyOk()?'<button class="btn btn-secondary btn-small" onclick="dailyScan()">📷 レジの紙を撮って入力</button>':''}
     ${store.carwash_store_id?'<button class="btn btn-secondary btn-small" onclick="fillFromReservations(false)">🚿 予約から入力</button>':''}
   </div>
+  ${night?`<div class="alert alert-i" style="padding:8px 12px;font-size:13px">🌙 いまは夜中なので、<b>${dateLabel(DY.date)}の営業分</b>として入力します（このお店は朝${store.day_start_hour}時で日付が変わります）</div>`:''}
   ${DY.report?`<div class="alert alert-s" style="padding:8px 12px;font-size:13px">この日は保存ずみです。直したら「保存する」を押してください。</div>`:''}
   <div id="dy-autonote">${DY.autoNote?`<div class="alert alert-i" style="padding:8px 12px;font-size:13px">${esc(DY.autoNote)}</div>`:''}</div>
   <div class="card">
@@ -2233,7 +2257,7 @@ async function saveDaily(){
     DY.done.add(DY.storeId);
     renderDaily();
     const next=myStores().find(s=>!DY.done.has(s.id));
-    if(next&&DY.date===ymd())$('dy-save').insertAdjacentHTML('beforebegin',`<div class="alert alert-s">保存しました。<br><button class="btn btn-primary" style="margin-top:8px" onclick="dailySwitch('${next.id}');$('scroll').scrollTop=0">つぎは「${esc(unitLabel(next))}」の売上を入力 ›</button></div>`);
+    if(next&&DY.dateAuto)$('dy-save').insertAdjacentHTML('beforebegin',`<div class="alert alert-s">保存しました。<br><button class="btn btn-primary" style="margin-top:8px" onclick="dailySwitch('${next.id}');$('scroll').scrollTop=0">つぎは「${esc(unitLabel(next))}」の売上を入力 ›</button></div>`);
   }catch(e){toast('保存できませんでした：'+e.message,'err');btn.disabled=false;btn.textContent='保存する'}
 }
 // --- 日報PDF（お店ごとに1枚） ---
@@ -3153,12 +3177,13 @@ function editStore(id,bizId){
     <div class="g2"><div class="field"><div class="label">カード手数料（%）</div><input class="input num" id="st-cfee" inputmode="decimal" value="${s.card_fee_rate??3.24}"/></div>
       <div class="field"><div class="label">アプリ手数料（%）</div><input class="input num" id="st-afee" inputmode="decimal" value="${s.app_fee_rate??1.98}"/></div></div>
     <div class="field"><div class="label">洗車予約システムの店舗番号（連携するお店だけ）</div><input class="input num" id="st-cw" inputmode="numeric" value="${s.carwash_store_id??''}" placeholder="例: 帯広=1、札内=2"/><div class="hint">入れると、日計表に予約の売上を自動で入れられます</div></div>
+    <div class="field"><div class="label">1日の区切り（営業日）</div><select class="input" id="st-day">${[0,1,2,3,4,5,6].map(h=>`<option value="${h}" ${(s.day_start_hour||0)===h?'selected':''}>${h?`朝${h}時（${h}時までは前の日の営業分）`:'0時（ふつう）'}</option>`).join('')}</select><div class="hint">夜中まで営業するお店は「朝5時」などにすると、0時をすぎて締めても前の日の売上になります</div></div>
     <div class="field"><div class="label">ならび順</div><input class="input num" id="st-order" inputmode="numeric" value="${s.sort_order??0}"/></div>
     <div class="btn-col"><button class="btn btn-primary" onclick="saveStore('${id||''}')">保存する</button>${id?`<button class="btn btn-danger" onclick="deleteStore('${id}')">このお店を消す</button>`:''}<button class="btn btn-secondary" onclick="closeSheet()">やめる</button></div>`);
 }
 async function saveStore(id){
   const p={business_id:$('st-biz').value||null,name:$('st-name').value.trim(),icon:$('st-icon').value.trim()||'🏪',color:$('st-color').value,
-    card_fee_rate:parseFloat($('st-cfee').value)||0,app_fee_rate:parseFloat($('st-afee').value)||0,carwash_store_id:int($('st-cw').value)||null,sort_order:int($('st-order').value)};
+    card_fee_rate:parseFloat($('st-cfee').value)||0,app_fee_rate:parseFloat($('st-afee').value)||0,carwash_store_id:int($('st-cw').value)||null,day_start_hour:int($('st-day').value),sort_order:int($('st-order').value)};
   if(!p.name){toast('名前を入れてください','err');return}
   try{if(id)await db.patch('stores?id=eq.'+id,p);else await db.post('stores',p);
     await reloadMasters();closeSheet();toast('保存しました','ok');renderOrg();
