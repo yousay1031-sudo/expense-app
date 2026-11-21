@@ -1455,16 +1455,18 @@ PAGES.home=async function(){
     const missing=stores.filter(s=>!reportedToday.has(s.id));
 
     // --- 今日やること ---
+    // 経費を先に入れておくと、日計表の「現金の経費」に自動で入る → 経費が先、売上があと
     const todos=[];
-    if(!missing.length)todos.push({done:true,text:'今日の売上は入力ずみ'});
-    else if(missing.length<=3)missing.forEach(s=>todos.push({text:(stores.length>1?'「'+unitLabel(s)+'」の':'')+'今日の売上を入力する',act:`openDailyFor('${s.id}')`,urgent:h>=17}));
-    else todos.push({text:`${missing.length}店舗の今日の売上がまだです`,act:"go('daily')",urgent:h>=17});
+    todos.push({text:'① 経費：レシート・領収書を撮影する',act:"go('scan')"});
+    todos.push({text:'② 経費：レシートが無いものを入力',act:"go('entry')"});
+    if(!missing.length)todos.push({done:true,text:'③ 売上：今日の売上は入力ずみ'});
+    else if(missing.length<=3)missing.forEach(s=>todos.push({text:'③ 売上：'+(stores.length>1?'「'+unitLabel(s)+'」の':'')+'今日の売上を入力する',act:`openDailyFor('${s.id}')`,urgent:h>=17}));
+    else todos.push({text:`③ 売上：${missing.length}店舗の今日の売上がまだです`,act:"go('daily')",urgent:h>=17});
     if(pendingRows.length)todos.push({text:`確認待ちの経費が ${pendingRows.length}件 あります`,act:"go('list','pending')",urgent:pendingRows.length>=10});
     else todos.push({done:true,text:'確認待ちの経費はありません'});
     const vst=stores.filter(st=>bizOfStore(st.id)?.track_vehicles);
     if(vst.length){try{const vv=(await db.getAll('vehicles?select=*'+inStores(vst.map(x=>x.id))+'&order=id')).filter(v=>!v.deleted_at&&ledgerMissing(v).length);
       if(vv.length)todos.push({text:`古物台帳の記入が足りない車が ${vv.length}台 あります`,act:"VH.filter='todo';go('vehicles')",urgent:true});}catch(e){}}
-    todos.push({text:'レシート・領収書を撮影する',act:"go('scan')"});
 
     let html=`<div class="card card-accent"><div class="card-title" style="color:var(--blue)">今日やること</div>`+
       todos.map(t=>`<div class="todo ${t.act?'tap':''}" ${t.act?`onclick="${t.act}"`:''}><div class="todo-check ${t.done?'done':t.urgent?'urgent':''}">${t.done?'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>':''}</div><div class="todo-text ${t.done?'done':t.urgent?'urgent':''}">${esc(t.text)}</div>${t.act?'<span class="chev">›</span>':''}</div>`).join('')+'</div>';
@@ -2186,6 +2188,8 @@ function renderDaily(){
   }
   h+=`<div class="card">
     <div class="card-title" style="color:var(--expense)">出ていったお金（支出）</div>
+    ${!DY.report&&!DY.cashCount&&!DY.cashOverride?`<div class="alert alert-w" style="font-size:13px">この日の経費がまだ入っていません。<b>先に経費を入れる</b>と、ここに自動で入ります。
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-secondary btn-small" onclick="go('scan')">📷 撮影する</button><button class="btn btn-secondary btn-small" onclick="go('entry')">✏️ 入力する</button></div></div>`:''}
     <div class="d-row"><div class="d-label">現金の経費<small id="dy-cash-note"></small></div><div style="text-align:right"><div id="dy-cashexp-auto" class="d-auto"></div><button class="link-btn" style="font-size:12px" onclick="toggleCashOverride()" id="dy-cash-toggle"></button></div></div>
     <div id="dy-cashexp-wrap" class="${DY.cashOverride?'':'hidden'}" style="padding-bottom:8px"><div class="yen-wrap" style="justify-content:flex-end"><span>¥</span><input class="d-input" id="dy-cashexp" inputmode="numeric" value="${DY.cashOverride?(r.cash_expenses||''):''}" oninput="calcDaily()"/></div></div>
     ${dyInput('dy-cardexp',r.card_expenses,'カードで払った経費')}
