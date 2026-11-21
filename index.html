@@ -1822,6 +1822,7 @@ async function scanSave(){
       await db.post('expenses',{
         store_id:d.storeId,doc_type:d.type==='other'?'receipt':d.type,
         vendor_name:d.vendor_name||null,date:d.date,total:d.total,
+        report_date:bizToday(d.storeId), // 日計表に入れる日＝撮影した営業日（date は領収書の日付）
         tax_8:d.tax_8,tax_10:d.tax_10,subtotal:d.subtotal,
         payment_method:d.payment_method,memo:d.memo||null,
         invoice_number:d.registration_number,
@@ -1933,7 +1934,7 @@ async function entrySave(){
       // お店を自分でえらばず、名前の確定前に保存した行もここでよそう
       if(!r.picked&&myStores().length>1&&!r.why){const g=await guessStore(r.vendor,[]);if(g.id)r.storeId=g.id}
       const cat=await guessCategory(r.vendor);
-      await db.post('expenses',{store_id:r.storeId,doc_type:'manual',vendor_name:r.vendor,date:r.date,total:r.amt,
+      await db.post('expenses',{store_id:r.storeId,doc_type:'manual',vendor_name:r.vendor,date:r.date,total:r.amt,report_date:bizToday(r.storeId),
         payment_method:EN.pay,department_id:guessDept(r.storeId,[r.vendor]),category_id:cat,status:'pending',created_by:S.user.username});
       forgetStoreGuess(r.vendor);by[r.storeId]=(by[r.storeId]||0)+1;
       ok++;
@@ -1953,7 +1954,7 @@ async function entrySave(){
 // ===== LIST（経費の一覧・確認・修正） =====
 const LI={status:'all',month:null,q:'',rows:[],loaded:false,unit:'all'};
 // 一覧で使う列だけ取る（AIの生データなど重い列は取らない）
-const LIST_COLS='id,store_id,department_id,category_id,vehicle_id,vendor_name,total,date,payment_method,memo,status,doc_type,image_url,created_by,created_at,card_last4';
+const LIST_COLS='id,store_id,department_id,category_id,vehicle_id,vendor_name,total,date,report_date,payment_method,memo,status,doc_type,image_url,created_by,created_at,card_last4';
 const STATUS_LABEL={pending:'確認待ち',approved:'確認ずみ',check:'要確認'};
 PAGES.list=async function(arg){
   if(arg==='pending'){LI.status='pending';LI.month='all'}
@@ -2046,8 +2047,9 @@ async function openExpense(id){
     ${e.image_url?`<a data-sign="${esc(e.image_url)}" target="_blank" rel="noopener"><img class="doc-thumb" data-sign="${esc(e.image_url)}" alt="レシートの写真"/></a>`:''}
     <div class="field"><div class="label">金額</div><div class="yen-wrap"><span>¥</span><input class="input big num" id="ex-total" inputmode="numeric" value="${e.total??''}"/></div></div>
     <div class="field"><div class="label">お店・取引先</div><input class="input" id="ex-vendor" value="${esc(e.vendor_name||'')}"/></div>
-    <div class="g2"><div class="field"><div class="label">日付</div><input class="input" type="date" id="ex-date" value="${esc(e.date||'')}"/></div>
+    <div class="g2"><div class="field"><div class="label">領収書の日付</div><input class="input" type="date" id="ex-date" value="${esc(e.date||'')}"/></div>
       <div class="field"><div class="label">払い方</div>${paySelectHtml('ex-pay',e.payment_method)}</div></div>
+    ${e.doc_type==='card_statement'||e.batch_id?'':`<div class="field"><div class="label">日計表に入れる日</div><input class="input" type="date" id="ex-rdate" value="${esc(e.report_date||e.date||'')}"/><div class="hint">撮影・入力した日です。日計表の「現金の経費」はこの日で集計します</div></div>`}
     <div class="field"><div class="label">メモ</div><input class="input" id="ex-memo" value="${esc(e.memo||'')}"/></div>
     <div class="field"><div class="label">経費の種類</div>${catSelectHtml('ex-cat',e.category_id)}</div>
     ${myStores().length>1||isOwner()?`<div class="field"><div class="label">どのお店の経費？</div>${unitButtons(e.store_id,'exPickStore')}<div class="hidden">${storeSel}</div></div>`:`<div class="hidden">${storeSel}</div>`}
@@ -2075,6 +2077,7 @@ async function saveExpense(){
   const patch={
     total:normAmount($('ex-total').value),vendor_name:$('ex-vendor').value.trim()||null,date:$('ex-date').value||null,
     payment_method:$('ex-pay').value,memo:$('ex-memo').value.trim()||null,category_id:$('ex-cat').value||null,
+    ...($('ex-rdate')?{report_date:$('ex-rdate').value||null}:{}),
     store_id:$('ex-store').value,department_id:$('ex-dept')?.value||null,vehicle_id:$('ex-veh')?.value||null,
     status:$('ex-status').querySelector('.active')?.dataset.v||e.status,updated_at:new Date().toISOString(),
   };
@@ -2127,12 +2130,14 @@ async function loadDaily(){
   el.innerHTML=pageHead('売上・支出の記録（日計表）',esc(store.icon||'')+' '+esc(store.name))+storePills(DY.storeId,'dailySwitch',dailyMark)+skel('form');
   DY.cashOverride=false;DY.autoNote='';
   const f=`&store_id=eq.${DY.storeId}&date=eq.${DY.date}`;
+  // 経費は「日計表に入れる日」（撮影・入力した営業日）で集める。古いデータで無いときは領収書の日付
+  const fEx=`&store_id=eq.${DY.storeId}&or=(report_date.eq.${DY.date},and(report_date.is.null,date.eq.${DY.date}))`;
   try{
     const [rep,ar,cov,ex]=await Promise.all([
       db.get('daily_reports?select=*'+f+'&order=created_at.desc'),
       db.get('daily_ar_entries?select=*'+f+'&order=created_at').catch(()=>[]),
       db.get('restaurant_covers?select=*'+f).catch(()=>[]),
-      db.get('expenses?select=total,payment_method'+f).catch(()=>[]),
+      db.get('expenses?select=total,payment_method'+fEx).catch(()=>[]),
     ]);
     DY.report=rep[0]||null;
     DY.ar=ar.map(a=>({key:uid(),client_id:a.client_id,client_name:a.client_name||'',amount:a.amount||0}));
@@ -2238,7 +2243,7 @@ function calcDaily(){
   $('dy-income').textContent=yen(income);$('dy-expense').textContent=yen(expense);
   $('dy-cardfee').textContent=yen(cardFee);$('dy-appfee').textContent=yen(appFee);
   $('dy-cashexp-auto').textContent=yen(DY.cashOverride?cashExp:DY.cashAuto);
-  $('dy-cash-note').textContent=DY.cashOverride?'手で入力しています':(DY.cashCount?`この日の現金レシート ${DY.cashCount}件から自動`:'この日の現金レシートはまだありません');
+  $('dy-cash-note').textContent=DY.cashOverride?'手で入力しています':(DY.cashCount?`この日に撮影・入力した現金の経費 ${DY.cashCount}件から自動`:'この日に撮影・入力した現金の経費はまだありません');
   $('dy-cash-toggle').textContent=DY.cashOverride?'自動にもどす':'手でなおす';
   $('dy-balance').textContent=yen(bal);$('dy-balance').style.color=bal>=0?'var(--green)':'var(--red)';
   $('dy-bal-card').style.background=bal>=0?'var(--green-l)':'var(--red-l)';
@@ -2328,7 +2333,7 @@ async function dailyPdf(){
     const store=storeById(DY.storeId);const biz=bizOfStore(DY.storeId);const r=DY.report;
     const f=`&store_id=eq.${DY.storeId}&date=eq.${DY.date}`;
     const [ex,ar,cov]=await Promise.all([
-      db.getAll('expenses?select=vendor_name,memo,total,payment_method,department_id,category_id,status'+f+'&order=created_at,id'),
+      db.getAll('expenses?select=vendor_name,memo,total,date,payment_method,department_id,category_id,status'+`&store_id=eq.${DY.storeId}&or=(report_date.eq.${DY.date},and(report_date.is.null,date.eq.${DY.date}))`+'&order=created_at,id'),
       db.get('daily_ar_entries?select=client_name,client_id,amount'+f+'&order=created_at').catch(()=>[]),
       biz?.track_covers?db.get('restaurant_covers?select=*'+f).catch(()=>[]):Promise.resolve([]),
     ]);
@@ -2362,11 +2367,11 @@ async function dailyPdf(){
       </div>
       ${c&&(c.lunch_covers||c.dinner_covers||c.lunch_guests||c.dinner_guests)?`<div class="p-sec"><div class="p-sec-title">お客さんの数</div><table class="p-table"><tr><th></th><th class="r">組数</th><th class="r">人数</th><th class="r">売上</th><th class="r">1組あたり</th><th class="r">1人あたり</th></tr>
         ${[['ランチ',c.lunch_covers,c.lunch_guests,c.lunch_sales],['ディナー',c.dinner_covers,c.dinner_guests,c.dinner_sales],['合計',(c.lunch_covers||0)+(c.dinner_covers||0),(c.lunch_guests||0)+(c.dinner_guests||0),(c.lunch_sales||0)+(c.dinner_sales||0)]].map(([l,n,g,v],k)=>`<tr${k===2?' class="p-tot"':''}><td>${l}</td><td class="r">${n||0}組</td><td class="r">${g||0}人</td><td class="r">${yen(v)}</td><td class="r">${n?yen((v||0)/n):'—'}</td><td class="r">${g?yen((v||0)/g):'—'}</td></tr>`).join('')}</table></div>`:''}
-      <div class="p-sec"><div class="p-sec-title">この日に登録した経費（レシートなど ${ex.length}件）</div>
-        ${ex.length?`<table class="p-table"><tr><th>取引先</th><th>買った物</th><th>部門</th><th>種類</th><th>払い方</th><th class="r">金額</th></tr>
-        ${shown.map(e=>`<tr><td>${esc(e.vendor_name||'')}</td><td>${esc(e.memo||'')}</td><td>${esc(deptById(e.department_id)?.name||'')}</td><td>${esc(catById(e.category_id)?.name||'')}</td><td>${esc(e.payment_method||'')}</td><td class="r">${yen(e.total)}</td></tr>`).join('')}
-        ${rest.length?`<tr><td colspan="5">ほか ${rest.length}件（くわしくは経費の一覧で）</td><td class="r">${yen(sum(rest,e=>e.total||0))}</td></tr>`:''}
-        <tr class="p-tot"><td colspan="5">合計</td><td class="r">${yen(exTotal)}</td></tr></table>
+      <div class="p-sec"><div class="p-sec-title">この日に撮影・入力した経費（${ex.length}件）</div>
+        ${ex.length?`<table class="p-table"><tr><th>領収書の日付</th><th>取引先</th><th>買った物</th><th>部門</th><th>種類</th><th>払い方</th><th class="r">金額</th></tr>
+        ${shown.map(e=>`<tr><td>${e.date?esc(e.date.slice(5).replace('-','/')):''}</td><td>${esc(e.vendor_name||'')}</td><td>${esc(e.memo||'')}</td><td>${esc(deptById(e.department_id)?.name||'')}</td><td>${esc(catById(e.category_id)?.name||'')}</td><td>${esc(e.payment_method||'')}</td><td class="r">${yen(e.total)}</td></tr>`).join('')}
+        ${rest.length?`<tr><td colspan="6">ほか ${rest.length}件（くわしくは経費の一覧で）</td><td class="r">${yen(sum(rest,e=>e.total||0))}</td></tr>`:''}
+        <tr class="p-tot"><td colspan="6">合計</td><td class="r">${yen(exTotal)}</td></tr></table>
         ${ex.some(e=>e.status!=='approved')?'<div class="p-note">※ まだ確認待ちの経費をふくみます</div>':''}`:'<div class="p-note">この日に登録した経費はありません</div>'}</div>
       <div class="p-sec"><div class="p-sec-title">メモ</div><div class="p-memo">${r.memo?esc(r.memo).replace(/\n/g,'<br>'):'　'}</div></div>
     </div>`};
