@@ -1202,7 +1202,12 @@ function normDate(d){
   let m=d.match(/(\d{4})[年\/\-.](\d{1,2})[月\/\-.](\d{1,2})/);if(m)return m[1]+'-'+pad(m[2])+'-'+pad(m[3]);
   m=d.match(/R\s*(\d{1,2})[年\/\-.](\d{1,2})[月\/\-.](\d{1,2})/i)||d.match(/令和\s*(\d{1,2})年(\d{1,2})月(\d{1,2})/);
   if(m)return (2018+parseInt(m[1]))+'-'+pad(m[2])+'-'+pad(m[3]);
-  m=d.match(/^(\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);if(m)return '20'+m[1]+'-'+pad(m[2])+'-'+pad(m[3]);
+  m=d.match(/^(\d{2})[\/\-.\s]+(\d{1,2})[\/\-.\s]+(\d{1,2})$/);
+  if(m){ // 2桁の年は、西暦（20YY）と令和（2018+YY）のうち今に近いほう（銀行の明細は和暦が多い）
+    const yy=parseInt(m[1],10),now=new Date().getFullYear();
+    const y=Math.abs(2000+yy-now)<=Math.abs(2018+yy-now)?2000+yy:2018+yy;
+    return y+'-'+pad(m[2])+'-'+pad(m[3]);
+  }
   return null;
 }
 const PAY_LABELS=['現金','カード','振込','アプリ','その他'];
@@ -1611,10 +1616,10 @@ function scanDocCard(d,i){
   return `<div class="doc-card ${d.skip?'skip':''} ${low?'low':''}" id="doc-${i}">
     <div class="doc-head">
       <input type="checkbox" ${d.skip?'':'checked'} onchange="scanToggle(${i},this.checked)" aria-label="保存する"/>
-      <div style="flex:1;min-width:0"><div style="font-weight:700">${DOC_LABEL[d.type]||'書類'} ${SC.docs.length>1?(i+1):''}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700">${d.isFee?'💴 手数料':(DOC_LABEL[d.type]||'書類')} ${SC.docs.length>1?(i+1):''}</div></div>
       <span class="conf ${confCls}">読み取り ${Math.round(conf*100)}%</span>
     </div>
-    ${d.thumb?`<img class="doc-thumb" src="${d.thumb}" alt=""/>`:''}
+    ${d.isFee?`<div class="alert alert-i" style="font-size:13px">上の明細に書いてあった手数料を、別の経費（支払手数料）にしました。いらなければ左上のチェックをはずしてください。</div>`:d.thumb?`<img class="doc-thumb" src="${d.thumb}" alt=""/>`:''}
     ${multi&&!isCard?`<div class="label" style="margin-bottom:6px">どのお店の経費？</div>${unitButtons(d.storeId,'scanSetStore',{arg:i})}${d.storeWhy?`<div class="guess-note">AIがえらびました（${esc(d.storeWhy)}）</div>`:''}`:''}
     ${isCard?`<div class="alert alert-i" style="font-size:13px">カード明細は1行ずつ登録するので${isOwner()?'「カード明細の取込」を使ってください。 <a href="#" onclick="go(\'cards\');return false" style="font-weight:700;color:inherit">開く ›</a>':'オーナーに渡してください。'}</div>`:''}
     ${low?'<div class="alert alert-w" style="font-size:13px">読み取りに自信がありません。数字を確かめてください。</div>':''}
@@ -1737,7 +1742,12 @@ async function runScanJob(job){
       }));
     }
     const docs=[];
-    for(const p of parts)docs.push(await scanBuildDoc(p.x,p.thumb));
+    for(const p of parts){
+      const d=await scanBuildDoc(p.x,p.thumb);docs.push(d);
+      // 手数料は別の経費（支払手数料）にする
+      const fee=normAmount(p.x.fee);
+      if(fee&&fee>0&&fee!==d.total)docs.push(await scanFeeDoc(d,fee));
+    }
     job.docs=docs;job.status='done';
     if(SC.phase==='review')collectScanDocs();
     SC.docs.push(...docs);
@@ -1768,14 +1778,28 @@ async function scanBuildDoc(x,thumb){
   else{d.department_id=d.deptMixed?null:guessDept(d.storeId,[d.vendor_name,d.memo]);d.deptWhy=d.department_id?'kw':''}
   return d;
 }
+async function scanFeeDoc(base,fee){
+  const cat=S.cats.find(c=>c.name==='支払手数料');
+  const isTransfer=base.payment_method==='振込';
+  return Object.assign({},base,{
+    vendor_name:isTransfer?'振込手数料':'手数料',
+    total:fee,tax_8:null,tax_10:null,subtotal:null,registration_number:null,
+    memo:(isTransfer?'振込手数料':'手数料')+(base.vendor_name?`（${base.vendor_name}${isTransfer?'への振込':''}）`:''),
+    category_id:cat?cat.id:base.category_id,
+    isFee:true,deptAi:null,deptMixed:false,
+    raw:Object.assign({},base.raw,{fee_of:base.total}),
+  });
+}
 const SCAN_ONE=`
 
 この写真は、書類を1枚だけ切り出したものです。documents は1件だけ返してください（まわりに写りこんだ別の書類の一部は無視）。crop は {"x1":0,"y1":0,"x2":1,"y2":1}。`;
 const SCAN_PROMPT=`この写真に写っている書類（レシート・領収書・納品書・請求書・カード明細など）をすべて読み取り、JSONだけを返してください。説明文は不要です。
-{"documents":[{"type":"receipt|delivery_note|invoice|card_statement|other","vendor_name":"店名・会社名","date":"YYYY-MM-DD","total":1234,"tax_8":null,"tax_10":null,"subtotal":null,"payment_method":"現金|カード|振込|アプリ|不明","memo":"主な品目を短く","registration_number":null,"crop":{"x1":0,"y1":0,"x2":1,"y2":1},"confidence":0.9,"store_index":null,"dept":null,"dept_mixed":false}]}
+{"documents":[{"type":"receipt|delivery_note|invoice|card_statement|other","vendor_name":"店名・会社名","date":"YYYY-MM-DD","total":1234,"tax_8":null,"tax_10":null,"subtotal":null,"payment_method":"現金|カード|振込|アプリ|不明","memo":"主な品目を短く","registration_number":null,"fee":null,"crop":{"x1":0,"y1":0,"x2":1,"y2":1},"confidence":0.9,"store_index":null,"dept":null,"dept_mixed":false}]}
 ルール:
 - 金額は数字だけ（円・カンマなし）。読めない項目は null（推測しない）
-- 和暦は西暦に直す（令和7年=2025年）
+- 和暦は西暦に直す（令和7年=2025年）。銀行・ATM・郵便局の明細の「08 11 09」のような2桁の年は和暦（令和8年11月9日=2026-11-09）
+- 振込・ATM・送金の明細（ご利用明細票など）：vendor_name は振込先（受取人）の名前、total は振込金額（手数料はふくめない）、payment_method は「振込」、memo は「○○への振込」。手数料（振込手数料・ATM手数料）は fee に入れる（無ければ null）
+- 振込以外でも、本体の金額と別に「手数料」が書いてあれば fee に入れる（total にふくまれている手数料は fee に入れない）
 - memo は買った物・サービスを短く（例「REガソリン 40L」「食材」「洗車用洗剤」）。クーポン・注意書き・ポイントは書かない
 - registration_number はインボイス登録番号（T＋13桁）があれば
 - crop は写真全体を1×1とした各書類の位置。書類どうし重ならないように。1件だけなら {"x1":0,"y1":0,"x2":1,"y2":1}
